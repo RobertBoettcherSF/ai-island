@@ -5,14 +5,23 @@ with Island.Stomach;
 
 package Island.World is
 
-   Save_Max : constant := 4096;
+   Save_Max : constant := 16384;
 
-   Max_Folk : constant := 36;
+   --  The 0.3.1 run pinned at 35 because only 36 slots existed and the
+   --  player's slot is never reused. Homes, not this array, limit births.
+   Max_Folk : constant := 80;
    subtype Folk_Id is Integer range 1 .. Max_Folk;
    Player_Id : constant Folk_Id := 1;
    Npc_Count : constant := 12;
-   Adult_Age : constant := 40;
+   Group_Count : constant := 4;
+   subtype Group_Id is Integer range 1 .. Group_Count;
+   Adult_Age : constant := 150;
    Max_Age : constant := 360;
+   Max_Homes : constant := 16;
+   subtype Home_Id is Integer range 1 .. Max_Homes;
+   Home_Capacity : constant := 4;
+   Max_Piles : constant := 8;
+   subtype Pile_Id is Integer range 1 .. Max_Piles;
 
    subtype Speed_T is Integer range 1 .. 3;
    subtype Sight_T is Integer range 2 .. 4;
@@ -31,6 +40,11 @@ package Island.World is
       Metabolism : Meta_T := 1;
       Fertility  : Fert_T := 2;
       Cool       : Natural := 0;
+      Group      : Group_Id := 1;
+      Home       : Natural := 0;
+      Sticks     : Natural := 0;
+      Stones     : Natural := 0;
+      Food       : Natural := 0;
    end record;
 
    type Folk_Array is array (Folk_Id) of Folk_Rec;
@@ -49,6 +63,40 @@ package Island.World is
 
    type Food is (None, Berries, Bare, Fish);
 
+   type Home_Kind is (Cave, Hut);
+
+   type Home_Rec is record
+      Used     : Boolean := False;
+      Kind     : Home_Kind := Cave;
+      Group    : Group_Id := 1;
+      X        : Coord := 0;
+      Y        : Coord := 0;
+      Capacity : Natural := Home_Capacity;
+   end record;
+
+   type Home_Array is array (Home_Id) of Home_Rec;
+
+   type Pile_Kind is (Stick_Pile, Stone_Pile);
+
+   type Pile_Rec is record
+      Kind  : Pile_Kind := Stick_Pile;
+      X     : Coord := 0;
+      Y     : Coord := 0;
+      Count : Natural := 0;
+   end record;
+
+   type Pile_Array is array (Pile_Id) of Pile_Rec;
+
+   --  Extinct_Cause: 0 none, 1 starvation, 2 old age, 3 no space.
+   type Group_Rec is record
+      Births         : Natural := 0;
+      Deaths         : Natural := 0;
+      Extinct_Turn   : Natural := 0;
+      Extinct_Cause  : Natural := 0;
+   end record;
+
+   type Group_Array is array (Group_Id) of Group_Rec;
+
    type State is record
       X          : Coord := Map.Start_X;
       Y          : Coord := Map.Start_Y;
@@ -65,7 +113,20 @@ package Island.World is
       Deaths      : Natural := 0;
       Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
       Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed;
+      Homes       : Home_Array;
+      Piles       : Pile_Array;
+      Groups      : Group_Array;
    end record;
+
+   function Standable (S : State; X, Y : Coord) return Boolean;
+
+   function Home_At (S : State; X, Y : Coord) return Natural;
+
+   function Home_Residents (S : State; H : Home_Id) return Natural;
+
+   function Group_Population (S : State; G : Group_Id) return Natural;
+
+   function Group_Home_Count (S : State; G : Group_Id) return Natural;
 
    function Valid (S : State) return Boolean;
 
@@ -172,6 +233,8 @@ package Island.World is
 
    subtype Trait_Query is Integer range 1 .. 4;
    function Average_Milli (S : State; Which : Trait_Query) return Natural;
+
+   function Group_Average (S : State; G : Group_Id; Which : Trait_Query) return Natural;
 
    --  Versioned text image of the state. The native runner writes the bytes;
    --  this package does not open a file.

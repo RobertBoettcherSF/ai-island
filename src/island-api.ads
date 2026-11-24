@@ -128,4 +128,55 @@ package Island.API is
    function Map_Ptr return Integer
      with Export, Convention => C, External_Name => "island_map_ptr";
 
+   function Group_Count return Integer
+     with Export, Convention => C, External_Name => "island_group_count";
+
+   function Group_Pop (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_pop";
+
+   function Group_Births (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_births";
+
+   function Group_Deaths (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_deaths";
+
+   function Group_Homes (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_homes";
+
+   function Group_Avg (G, Which : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_avg";
+
+   function Group_Extinct (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_extinct";
+
+   function Group_Cause (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_cause";
+
+   function Home_Max return Integer
+     with Export, Convention => C, External_Name => "island_home_max";
+
+   function Home_Used (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_used";
+
+   function Home_X (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_x";
+
+   function Home_Y (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_y";
+
+   function Home_Group (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_group";
+
+   function Home_Kind (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_kind";
+
+   function Home_Residents (H : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_residents";
+
+   function Folk_Group (Id : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_folk_group";
+
+   function Folk_Home (Id : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_folk_home";
+
 end Island.API;

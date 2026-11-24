@@ -76,8 +76,10 @@ begin
       W.Folk (3).Y := 50;
       W.Folk (2).Belly.Full := 95;
       W.Folk (3).Belly.Full := 95;
-      W.Folk (2).Age := 80;
-      W.Folk (3).Age := 80;
+      W.Folk (2).Age := 160;
+      W.Folk (3).Age := 160;
+      W.Folk (2).Group := 1;
+      W.Folk (3).Group := 1;
       W.Folk (2).Cool := 0;
       W.Folk (3).Cool := 0;
       for I in Island.World.Folk_Id loop
@@ -90,6 +92,58 @@ begin
       Island.Folk.After_Actions (W, 1);
       pragma Assert (W.Births = 1);
       pragma Assert (Island.World.Alive_Count (W) = Before + 1);
+      declare
+         Child : Integer := 0;
+      begin
+         for I in Island.World.Folk_Id loop
+            if W.Folk (I).Alive and then W.Folk (I).Age = 0 then
+               Child := I;
+            end if;
+         end loop;
+         pragma Assert (Child /= 0);
+         pragma Assert (W.Folk (Child).Group = 1);
+         pragma Assert (W.Folk (Child).Home = 1);
+         pragma Assert (W.Folk (Child).X = W.Homes (1).X);
+         pragma Assert (W.Folk (Child).Y = W.Homes (1).Y);
+         W.X := W.Homes (1).X;
+         W.Y := W.Homes (1).Y;
+         W.Folk (1).Food := 1;
+         W.Folk (Child).Belly.Full := 20;
+         Island.Folk.Player_Feed (W, Before);
+         pragma Assert (Before = 1);
+         pragma Assert (W.Folk (Child).Belly.Full = 45);
+         pragma Assert (W.Folk (1).Food = 0);
+      end;
+      Island.World.Reset (W);
+      for K in 1 .. Island.World.Home_Capacity loop
+         W.Folk (20 + K).Alive := True;
+         W.Folk (20 + K).Age := 10;
+         W.Folk (20 + K).Group := 1;
+         W.Folk (20 + K).Home := 1;
+         W.Folk (20 + K).X := W.Homes (1).X;
+         W.Folk (20 + K).Y := W.Homes (1).Y;
+         W.Folk (20 + K).Belly := (Full => 40, Empty_For => 0, Collapsed => False);
+      end loop;
+      W.Folk (2).X := 48;
+      W.Folk (2).Y := 49;
+      W.Folk (3).X := 48;
+      W.Folk (3).Y := 50;
+      W.Folk (2).Belly.Full := 95;
+      W.Folk (3).Belly.Full := 95;
+      W.Folk (2).Age := 160;
+      W.Folk (3).Age := 160;
+      W.Folk (2).Group := 1;
+      W.Folk (3).Group := 1;
+      W.Folk (2).Cool := 0;
+      W.Folk (3).Cool := 0;
+      for I in Island.World.Folk_Id loop
+         if I /= 2 and then I /= 3 and then W.Folk (I).Age >= 150 then
+            W.Folk (I).Cool := 40;
+            W.Folk (I).Belly.Full := 40;
+         end if;
+      end loop;
+      Island.Folk.After_Actions (W, 1);
+      pragma Assert (W.Births = 0);
 
       Island.World.Reset (W);
       W.Folk (4).Belly.Full := 0;
@@ -118,6 +172,16 @@ begin
          & " sight" & Natural'Image (A2) & "->" & Natural'Image (B2)
          & " meta" & Natural'Image (A3) & "->" & Natural'Image (B3)
          & " fert" & Natural'Image (A4) & "->" & Natural'Image (B4));
+      for G in Island.World.Group_Id loop
+         Ada.Text_IO.Put_Line
+           ("group" & Integer'Image (G)
+            & " pop" & Natural'Image (Island.World.Group_Population (W, G))
+            & " births" & Natural'Image (W.Groups (G).Births)
+            & " deaths" & Natural'Image (W.Groups (G).Deaths)
+            & " homes" & Natural'Image (Island.World.Group_Home_Count (W, G))
+            & " extinct" & Natural'Image (W.Groups (G).Extinct_Turn)
+            & " cause" & Natural'Image (W.Groups (G).Extinct_Cause));
+      end loop;
       pragma Assert (Island.World.Alive_Count (W) > 0);
       pragma Assert (W.Births >= 1);
       pragma Assert (A1 /= B1 or else A2 /= B2 or else A3 /= B3 or else A4 /= B4);

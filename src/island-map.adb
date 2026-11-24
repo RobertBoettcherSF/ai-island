@@ -25,22 +25,6 @@ package body Island.Map is
       return Rng.Mix (Unsigned_32 (Seed), Unsigned_32 (A), Unsigned_32 (B));
    end Mix;
 
-   function In_Lake (X, Y : Coord) return Boolean is
-      DX : constant Integer := Integer (X) - 70;
-      DY : constant Integer := Integer (Y) - 62;
-      --  (dx/14)^2 + (dy/9)^2 < 1, in integers.
-   begin
-      return DX * DX * 81 + DY * DY * 196 < 196 * 81;
-   end In_Lake;
-
-   function Lake_Shore (X, Y : Coord) return Boolean is
-      DX : constant Integer := Integer (X) - 70;
-      DY : constant Integer := Integer (Y) - 62;
-      Band : constant Integer := DX * DX * 81 + DY * DY * 196;
-   begin
-      return Band >= 196 * 81 and then Band < (196 * 81 * 150) / 100;
-   end Lake_Shore;
-
    function Pond (X, Y : Coord) return Boolean is
    begin
       return X = Pond_X and then Y = Pond_Y;
@@ -58,21 +42,6 @@ package body Island.Map is
       return abs (Integer (X) - Integer (Start_X)) <= 4
         and then abs (Integer (Y) - Integer (Start_Y)) <= 4;
    end Clearing;
-
-   function Water_Cell (X, Y : Coord) return Boolean is
-   begin
-      return Pond (X, Y) or else In_Lake (X, Y)
-        or else X <= 2 or else Y <= 2 or else X >= 93 or else Y >= 93;
-   end Water_Cell;
-
-   function Sand_Cell (X, Y : Coord) return Boolean is
-   begin
-      if Water_Cell (X, Y) then
-         return False;
-      end if;
-      return X <= 5 or else Y <= 5 or else X >= 90 or else Y >= 90
-        or else Lake_Shore (X, Y) or else Pond_Shore (X, Y);
-   end Sand_Cell;
 
    function Bush_Off (P : Spot; K : Integer) return Spot is
    begin
@@ -152,56 +121,7 @@ package body Island.Map is
       return Groves (G);
    end Pick_Grove;
 
-   function Shallow_Cell (X, Y : Coord) return Boolean is
-   begin
-      if not Water_Cell (X, Y) then
-         return False;
-      end if;
-      if X > Coord'First and then Sand_Cell (X - 1, Y) then
-         return True;
-      end if;
-      if X < Coord'Last and then Sand_Cell (X + 1, Y) then
-         return True;
-      end if;
-      if Y > Coord'First and then Sand_Cell (X, Y - 1) then
-         return True;
-      end if;
-      if Y < Coord'Last and then Sand_Cell (X, Y + 1) then
-         return True;
-      end if;
-      return False;
-   end Shallow_Cell;
-
-   function Pick_Fish (Seed : Seed_Value; Which : Fish_Index) return Spot is
-      use Interfaces;
-      H     : constant Unsigned_32 := Mix (Seed, 90, Which);
-      Start : constant Integer := Integer (H mod 9000);
-      Seen  : Natural := 0;
-      N     : Integer;
-      X, Y  : Coord;
-   begin
-      for Step in 0 .. Grid_Size * Grid_Size - 1 loop
-         N := (Start + Step) mod (Grid_Size * Grid_Size);
-         X := Coord (N mod Grid_Size);
-         Y := Coord (N / Grid_Size);
-         if Shallow_Cell (X, Y) then
-            Seen := Seen + 1;
-            if Seen = Which then
-               return (X => X, Y => Y);
-            end if;
-         end if;
-      end loop;
-      case Which is
-         when 1 =>
-            return (X => Pond_X, Y => Pond_Y);
-         when 2 =>
-            return (X => 57, Y => 62);
-         when 3 =>
-            return (X => 83, Y => 62);
-         when 4 =>
-            return (X => 70, Y => 54);
-      end case;
-   end Pick_Fish;
+   function Pick_Fish (Seed : Seed_Value; Which : Fish_Index) return Spot;
 
    function Build (Seed : Seed_Value) return Layout is
       Result : Layout;
@@ -224,13 +144,7 @@ package body Island.Map is
                Result.Homes (N) := (X => P.X + 3, Y => P.Y + 2);
             end if;
          end loop;
-         Result.Fish :=
-           [1 => (X => Pond_X, Y => Pond_Y),
-            2 => (X => 57, Y => 62),
-            3 => (X => 83, Y => 62),
-            4 => (X => 70, Y => 54)];
-         return Result;
-      end if;
+      else
       declare
          Centers : Grove_List;
       begin
@@ -255,6 +169,7 @@ package body Island.Map is
             end if;
          end loop;
       end;
+      end if;
       for I in Fish_Index loop
          Result.Fish (I) := Pick_Fish (Seed, I);
       end loop;
@@ -288,65 +203,57 @@ package body Island.Map is
    end Reserved;
 
    function Terrain_At (Seed : Seed_Value; X, Y : Coord) return Terrain is
-      H : Natural;
-      Wet : Natural;
+      Kind : Natural;
    begin
       if Pond (X, Y) then
          return Water;
       end if;
-      if X <= 2 or else Y <= 2 or else X >= 93 or else Y >= 93 then
-         return Water;
-      end if;
-      H := Height (Seed, X, Y);
       if Pond_Shore (X, Y) then
          return Sand;
       end if;
-      if X <= 5 or else Y <= 5 or else X >= 90 or else Y >= 90 then
-         return Sand;
-      end if;
-      if Reserved (Seed, X, Y) or else (Clearing (X, Y) and then H > 0) then
+      if Reserved (Seed, X, Y) or else Clearing (X, Y) then
          return Grass;
       end if;
-      if H = 0 then
-         return Water;
-      end if;
-      if H <= 2 then
-         return Sand;
-      end if;
-      if H >= 16 then
-         return Rock;
-      end if;
-      Wet := Rain (Seed, X, Y);
-      if Wet < 28 then
-         return Sand;
-      end if;
-      --  Wet slopes grow forest. The plains and the low ground stay grass,
-      --  so a group can walk and the berries have somewhere to sit.
-      if Wet >= 55 and then H in 8 .. 12
-        and then Mix (Seed, Natural (X), Natural (Y)) mod 3 = 0
+      if Active_Size > 60
+        and then ((X = 30 and then Y = 30) or else (X = 31 and then Y = 30)
+                  or else (X = 16 and then Y in 16 .. 17)
+                  or else (X = 18 and then Y in 18 .. 19)
+                  or else (X = 41 and then Y = 40) or else (X = 40 and then Y = 40))
       then
-         return Tree;
+         return Grass;
       end if;
-      return Grass;
+      Kind := Biome (Seed, X, Y);
+      case Kind is
+         when 0 | 13 =>
+            return Water;
+         when 1 | 7 =>
+            return Sand;
+         when 4 =>
+            return Rock;
+         when 5 | 8 =>
+            return Tree;
+         when others =>
+            return Grass;
+      end case;
    end Terrain_At;
 
    function Walkable (Ground : Terrain) return Boolean is
    begin
-      return Ground = Sand or else Ground = Grass;
+      return Ground = Sand or else Ground = Grass or else Ground = Tree;
    end Walkable;
 
    function Sand_Beside (Seed : Seed_Value; X, Y : Coord) return Boolean is
    begin
-      if X > Coord'First and then Terrain_At (Seed, X - 1, Y) = Sand then
+      if X > Coord'First and then Walkable (Terrain_At (Seed, X - 1, Y)) then
          return True;
       end if;
-      if X < Coord'Last and then Terrain_At (Seed, X + 1, Y) = Sand then
+      if X < Coord'Last and then Walkable (Terrain_At (Seed, X + 1, Y)) then
          return True;
       end if;
-      if Y > Coord'First and then Terrain_At (Seed, X, Y - 1) = Sand then
+      if Y > Coord'First and then Walkable (Terrain_At (Seed, X, Y - 1)) then
          return True;
       end if;
-      if Y < Coord'Last and then Terrain_At (Seed, X, Y + 1) = Sand then
+      if Y < Coord'Last and then Walkable (Terrain_At (Seed, X, Y + 1)) then
          return True;
       end if;
       return False;
@@ -401,22 +308,39 @@ package body Island.Map is
       return True;
    end Layout_Ok;
 
-   Coarse : constant := 16;
 
    type Path is array (1 .. River_Max) of Spot;
    type Path_Set is array (River_Index) of Path;
+   type Reg is record
+      Kind : Natural := 0;
+      A    : Natural := 0;
+      B    : Natural := 0;
+   end record;
 
-   Elev        : array (Coord, Coord) of Natural := [others => [others => 0]];
+   Act_N       : Positive := Default_Size;
+   Act_Pole    : Natural := 0;
+   Act_Preset  : Natural := 0;
+   Act_Code    : Natural := 3;
+   Elev        : array (Coord, Coord) of Integer := [others => [others => 0]];
+   Rain_F      : array (Coord, Coord) of Natural := [others => [others => 40]];
+   Drain_F     : array (Coord, Coord) of Natural := [others => [others => 50]];
+   Sea         : array (Coord, Coord) of Boolean := [others => [others => False]];
+   Lake        : array (Coord, Coord) of Boolean := [others => [others => False]];
    River_Paths : Path_Set;
    River_Lens  : array (River_Index) of Natural := [others => 0];
-   River_Wide  : array (River_Index, 1 .. River_Max) of Natural :=
-     [others => [others => 1]];
    World_Ready : Boolean := False;
    World_Seed  : Seed_Value := 0;
+   World_Code  : Natural := 3;
+   World_Pole  : Natural := 0;
+   World_Pre   : Natural := 0;
    Rejects     : Natural := 0;
    Ranges      : Natural := 0;
-   Gate_X      : Coord := 30;
-   Gate_Y      : Coord := 30;
+   Reason_N    : Natural := 0;
+   Reasons     : array (1 .. 8) of Natural := [others => 0];
+   Lake_N      : Natural := 0;
+   Lake_Tiles  : array (1 .. 2) of Natural := [others => 0];
+   Reg_N       : Natural := 0;
+   Regs        : array (1 .. Region_Max) of Reg := [others => (0, 0, 0)];
 
    function Clamp (V, Lo, Hi : Integer) return Integer is
    begin
@@ -429,277 +353,382 @@ package body Island.Map is
       end if;
    end Clamp;
 
-   function Rand (Seed : Seed_Value; A, B : Natural) return Natural is
-      use Interfaces;
+   function Cells_Of (Code : Natural) return Positive is
    begin
-      return Natural (Mix (Seed, A, B) mod 1000);
-   end Rand;
+      case Code is
+         when 0 =>
+            return 17;
+         when 1 =>
+            return 33;
+         when 2 =>
+            return 65;
+         when 4 =>
+            return 257;
+         when others =>
+            return Default_Size;
+      end case;
+   end Cells_Of;
+
+   procedure Use_Settings (Size_Code, Pole, Preset : Natural) is
+      Code : Natural := Size_Code;
+      P    : Natural := Pole;
+      R    : Natural := Preset;
+   begin
+      if Code > 4 then
+         Code := 3;
+      end if;
+      if P > 3 then
+         P := 0;
+      end if;
+      if R > 2 then
+         R := 0;
+      end if;
+      if World_Ready and then Code = World_Code and then P = World_Pole
+        and then R = World_Pre
+      then
+         Act_Code := Code;
+         Act_Pole := P;
+         Act_Preset := R;
+         Act_N := Cells_Of (Code);
+         return;
+      end if;
+      Act_Code := Code;
+      Act_Pole := P;
+      Act_Preset := R;
+      Act_N := Cells_Of (Code);
+      World_Ready := False;
+   end Use_Settings;
+
+   function Active_Size return Positive is
+   begin
+      return Act_N;
+   end Active_Size;
+
+   function Size_Code return Natural is
+   begin
+      return Act_Code;
+   end Size_Code;
+
+   function Pole return Natural is
+   begin
+      return Act_Pole;
+   end Pole;
+
+   function Preset return Natural is
+   begin
+      return Act_Preset;
+   end Preset;
+
+   function In_Map (X, Y : Integer) return Boolean is
+   begin
+      return X in 0 .. Act_N - 1 and then Y in 0 .. Act_N - 1;
+   end In_Map;
+
+   function Edge_Dist (X, Y : Integer) return Integer is
+   begin
+      return Integer'Min
+        (Integer'Min (X, Y), Integer'Min (Act_N - 1 - X, Act_N - 1 - Y));
+   end Edge_Dist;
+
+   function Smooth (A, B, T, Span : Integer) return Integer is
+      W : Integer;
+   begin
+      if Span <= 1 then
+         return A;
+      end if;
+      W := T * T * (3 * Span - 2 * T) / (Span * Span);
+      W := Clamp (W, 0, Span);
+      return (A * (Span - W) + B * W) / Span;
+   end Smooth;
+
+   procedure Add_Region (Kind, A, B : Natural) is
+   begin
+      if Reg_N < Region_Max then
+         Reg_N := Reg_N + 1;
+         Regs (Reg_N) := (Kind => Kind, A => A, B => B);
+      end if;
+   end Add_Region;
+
+   procedure Note (Code : Natural) is
+   begin
+      if Reason_N < Reasons'Last then
+         Reason_N := Reason_N + 1;
+         Reasons (Reason_N) := Code;
+      end if;
+   end Note;
 
    procedure Generate (Gen : Seed_Value) is
-      CElev : array (0 .. Coarse, 0 .. Coarse) of Integer :=
-        [others => [others => 0]];
-      Seen  : array (Coord, Coord) of Boolean := [others => [others => False]];
-      Length, Half, Amp, X, Y, Sum, Count, Noise : Integer;
-      SX, SY, DX, DY, Add, K : Integer;
-      LX, LY, GX, GY : Integer;
+      Elev_S  : Rng.State := Rng.Init (Rng.Mix (Interfaces.Unsigned_32 (Gen), 1, 0));
+      Rain_S  : Rng.State := Rng.Init (Rng.Mix (Interfaces.Unsigned_32 (Gen), 2, 0));
+      Drain_S : Rng.State := Rng.Init (Rng.Mix (Interfaces.Unsigned_32 (Gen), 3, 0));
+      River_S : Rng.State := Rng.Init (Rng.Mix (Interfaces.Unsigned_32 (Gen), 4, 0));
+      Name_S  : Rng.State := Rng.Init (Rng.Mix (Interfaces.Unsigned_32 (Gen), 5, 0));
+      Coarse  : constant := 8;
+      CMax    : constant := 40;
+      Rain_C  : array (0 .. CMax, 0 .. CMax) of Integer := [others => [others => 40]];
+      Drain_C : array (0 .. CMax, 0 .. CMax) of Integer := [others => [others => 50]];
+      X, Y, NX, NY, Edge, V, CX, CY, TX, TY, Span : Integer;
+      LX      : array (1 .. 2) of Integer := [others => 0];
+      LY      : array (1 .. 2) of Integer := [others => 0];
+      Queue_X : array (1 .. 8000) of Integer;
+      Queue_Y : array (1 .. 8000) of Integer;
+      Qh, Qt  : Natural;
+      Seen    : array (Coord, Coord) of Boolean := [others => [others => False]];
+      Row     : array (0 .. Max_Size - 1) of Integer;
       Springs : array (River_Index) of Spot;
-      Best, Score, H, Dist, Desired, Prev_H : Integer;
-      Step, BX, BY, NX, NY : Integer;
-      Wide : Natural;
-
-      function Kept (X, Y : Integer) return Boolean is
-         P : Spot;
-      begin
-         if X not in Coord or else Y not in Coord then
-            return True;
-         end if;
-         if Clearing (Coord (X), Coord (Y)) then
-            return True;
-         end if;
-         if (X = 30 and then Y = 30) or else (X = 31 and then Y = 30) then
-            return True;
-         end if;
-         if (X = 18 and then Y in 18 .. 19)
-           or else (X = 78 and then Y in 18 .. 19)
-           or else (X = 18 and then Y in 78 .. 79)
-           or else (X = 78 and then Y in 78 .. 79)
-         then
-            return True;
-         end if;
-         for G in Grove_Index loop
-            for KK in 0 .. 7 loop
-               P := Bush_Off (Groves (G), KK);
-               if Integer (P.X) = X and then Integer (P.Y) = Y then
-                  return True;
-               end if;
-            end loop;
-         end loop;
-         return False;
-      end Kept;
+      Step, BX, BY, Best, Score, Dist, Prev_H, H : Integer;
+      Wide_Lake : Natural;
    begin
-      Ranges := 1 + Rand (Gen, 3, 1) mod 3;
-      for I in 0 .. Coarse loop
-         CElev (I, 0) := 0;
-         CElev (I, Coarse) := 0;
-         CElev (0, I) := 0;
-         CElev (Coarse, I) := 0;
-      end loop;
-      CElev (8, 8) := 6 + Integer (Rand (Gen, 4, 1) mod 6);
-      Length := Coarse;
-      Amp := 8;
-      while Length > 1 loop
-         Half := Length / 2;
-         Y := Half;
-         while Y < Coarse loop
-            X := Half;
-            while X < Coarse loop
-               Sum := CElev (X - Half, Y - Half) + CElev (X + Half, Y - Half)
-                 + CElev (X - Half, Y + Half) + CElev (X + Half, Y + Half);
-               Noise := Integer (Rand (Gen, Natural (X + 20), Natural (Y + Length)) mod
-                 Natural (Amp * 2 + 1)) - Amp;
-               CElev (X, Y) := Clamp (Sum / 4 + Noise, 0, 22);
-               X := X + Length;
-            end loop;
-            Y := Y + Length;
-         end loop;
-         Y := 0;
-         while Y <= Coarse loop
-            if (Y / Half) mod 2 = 0 then
-               X := Half;
-            else
-               X := 0;
-            end if;
-            while X <= Coarse loop
-               if X /= 0 and then X /= Coarse and then Y /= 0 and then Y /= Coarse then
-                  Sum := 0;
-                  Count := 0;
-                  if X - Half >= 0 then
-                     Sum := Sum + CElev (X - Half, Y);
-                     Count := Count + 1;
-                  end if;
-                  if X + Half <= Coarse then
-                     Sum := Sum + CElev (X + Half, Y);
-                     Count := Count + 1;
-                  end if;
-                  if Y - Half >= 0 then
-                     Sum := Sum + CElev (X, Y - Half);
-                     Count := Count + 1;
-                  end if;
-                  if Y + Half <= Coarse then
-                     Sum := Sum + CElev (X, Y + Half);
-                     Count := Count + 1;
-                  end if;
-                  if Count > 0 then
-                     Noise := Integer (Rand (Gen, Natural (X + 40), Natural (Y + Length)) mod
-                       Natural (Amp * 2 + 1)) - Amp;
-                     CElev (X, Y) := Clamp (Sum / Count + Noise, 0, 22);
-                  end if;
-               end if;
-               X := X + Length;
-            end loop;
-            Y := Y + Half;
-         end loop;
-         for I in 0 .. Coarse loop
-            CElev (I, 0) := 0;
-            CElev (I, Coarse) := 0;
-            CElev (0, I) := 0;
-            CElev (Coarse, I) := 0;
-         end loop;
-         Length := Half;
-         Amp := Amp / 2;
-         if Amp < 1 then
-            Amp := 1;
-         end if;
-      end loop;
-
+      Ranges := 1 + Rng.Below (Elev_S, 3);
+      Reg_N := 0;
+      Lake_N := 0;
+      Lake_Tiles := [others => 0];
       for YY in Coord loop
          for XX in Coord loop
-            declare
-               Px : constant Integer := XX * Coarse;
-               Py : constant Integer := YY * Coarse;
-               X0 : Integer := Px / (Grid_Size - 1);
-               Y0 : Integer := Py / (Grid_Size - 1);
-               Tx : Integer := Px mod (Grid_Size - 1);
-               Ty : Integer := Py mod (Grid_Size - 1);
-               X1, Y1, Top, Bot, V : Integer;
-            begin
-               if X0 > Coarse - 1 then
-                  X0 := Coarse - 1;
-                  Tx := Grid_Size - 1;
-               end if;
-               if Y0 > Coarse - 1 then
-                  Y0 := Coarse - 1;
-                  Ty := Grid_Size - 1;
-               end if;
-               X1 := X0 + 1;
-               Y1 := Y0 + 1;
-               Top := (CElev (X0, Y0) * (Grid_Size - 1 - Tx) + CElev (X1, Y0) * Tx)
-                 / (Grid_Size - 1);
-               Bot := (CElev (X0, Y1) * (Grid_Size - 1 - Tx) + CElev (X1, Y1) * Tx)
-                 / (Grid_Size - 1);
-               V := (Top * (Grid_Size - 1 - Ty) + Bot * Ty) / (Grid_Size - 1);
-               Elev (XX, YY) := Natural (Clamp (V, 0, 22));
-            end;
+            Elev (XX, YY) := 0;
+            Rain_F (XX, YY) := 40;
+            Drain_F (XX, YY) := 50;
+            Sea (XX, YY) := False;
+            Lake (XX, YY) := False;
+         end loop;
+      end loop;
+
+      for YY in 0 .. Act_N - 1 loop
+         for XX in 0 .. Act_N - 1 loop
+            Edge := Edge_Dist (XX, YY);
+            if Edge <= 2 then
+               Elev (Coord (XX), Coord (YY)) := 0;
+            else
+               V := 4 + Edge / 5
+                 + Integer (Rng.Below (Elev_S, 5)) - 2;
+               Elev (Coord (XX), Coord (YY)) := Clamp (V, 3, 24);
+            end if;
          end loop;
       end loop;
 
       for R in 1 .. Ranges loop
-         SX := 14 + Integer (Rand (Gen, R, 5) mod 68);
-         SY := 14 + Integer (Rand (Gen, R, 6) mod 68);
-         DX := Integer (Rand (Gen, R, 7) mod 3) - 1;
-         DY := Integer (Rand (Gen, R, 8) mod 3) - 1;
-         if DX = 0 and then DY = 0 then
-            DX := 1;
-         end if;
-         K := 0;
-         while K < 34 loop
-            if K mod 11 = 7 then
-               Add := 3;
-            else
-               Add := 14 - abs (K - 16) / 2;
-            end if;
-            for OY in -2 .. 2 loop
-               for OX in -2 .. 2 loop
-                  NX := SX + OX;
-                  NY := SY + OY;
-                  if NX in Coord and then NY in Coord
-                    and then NX > 5 and then NY > 5 and then NX < 90 and then NY < 90
-                  then
-                     Dist := abs OX + abs OY;
-                     if Dist <= 2 then
-                        Elev (Coord (NX), Coord (NY)) :=
-                          Elev (Coord (NX), Coord (NY))
-                          + Natural (Add * (3 - Dist) / 3);
-                        if Elev (Coord (NX), Coord (NY)) > 28 then
-                           Elev (Coord (NX), Coord (NY)) := 28;
-                        end if;
-                     end if;
-                  end if;
-               end loop;
-            end loop;
-            if K mod 5 = 4 then
-               DX := Clamp (DX + Integer (Rand (Gen, R, Natural (K)) mod 3) - 1, -1, 1);
-               DY := Clamp (DY + Integer (Rand (Gen, R, Natural (K + 3)) mod 3) - 1, -1, 1);
-               if DX = 0 and then DY = 0 then
-                  DY := 1;
+         X := 4 + Integer (Rng.Below (Elev_S, Positive (Act_N - 8)));
+         Y := 4 + Integer (Rng.Below (Elev_S, Positive (Act_N - 8)));
+         for K in 0 .. 18 + Act_N / 10 loop
+            if X in 3 .. Act_N - 4 and then Y in 3 .. Act_N - 4 then
+               if K mod 11 = 7 then
+                  V := 2;
+               else
+                  V := 6;
                end if;
+               Elev (Coord (X), Coord (Y)) :=
+                 Clamp (Elev (Coord (X), Coord (Y)) + V, 0, 28);
             end if;
-            SX := Clamp (SX + DX, 8, 87);
-            SY := Clamp (SY + DY, 8, 87);
-            K := K + 1;
+            case Rng.Below (Elev_S, 4) is
+               when 0 =>
+                  Y := Y - 1;
+               when 1 =>
+                  X := X + 1;
+               when 2 =>
+                  Y := Y + 1;
+               when others =>
+                  X := X - 1;
+            end case;
+            X := Clamp (X, 3, Act_N - 4);
+            Y := Clamp (Y, 3, Act_N - 4);
+         end loop;
+         Add_Region (1, Rng.Below (Name_S, 16), Rng.Below (Name_S, 16));
+      end loop;
+
+      for Pass in 1 .. 2 loop
+         for YY in 1 .. Act_N - 2 loop
+            for XX in 1 .. Act_N - 2 loop
+               Row (XX) :=
+                 (Elev (Coord (XX - 1), Coord (YY))
+                  + Elev (Coord (XX), Coord (YY)) * 2
+                  + Elev (Coord (XX + 1), Coord (YY))) / 4;
+            end loop;
+            for XX in 1 .. Act_N - 2 loop
+               if Edge_Dist (XX, YY) > 2 then
+                  Elev (Coord (XX), Coord (YY)) := Row (XX);
+               end if;
+            end loop;
          end loop;
       end loop;
 
-      for YY in Coord loop
-         for XX in Coord loop
-            if Elev (XX, YY) in 5 .. 9
-              and then XX > 5 and then YY > 5 and then XX < 90 and then YY < 90
+      for YY in 1 .. Act_N - 2 loop
+         for XX in 1 .. Act_N - 2 loop
+            if Edge_Dist (XX, YY) > 2
+              and then Elev (Coord (XX), Coord (YY))
+                > Elev (Coord (XX), Coord (YY + 1)) + 2
             then
-               Elev (XX, YY) := 6;
+               Elev (Coord (XX), Coord (YY)) :=
+                 Elev (Coord (XX), Coord (YY + 1)) + 2;
+            end if;
+            if Elev (Coord (XX), Coord (YY))
+              >= Elev (Coord (XX + 1), Coord (YY)) + 3
+            then
+               Elev (Coord (XX), Coord (YY)) :=
+                 Elev (Coord (XX), Coord (YY)) - 1;
             end if;
          end loop;
       end loop;
 
-      LX := 22;
-      LY := 50;
-      if Rand (Gen, 9, 2) mod 2 = 1 then
-         LX := 74;
-         LY := 50;
-      end if;
-      if abs (LX - Integer (Start_X)) + abs (LY - Integer (Start_Y)) < 16 then
-         LX := 22;
-         LY := 50;
-      end if;
-      GX := LX;
-      GY := LY - 5;
-      if GY < 8 then
-         GY := LY + 5;
-      end if;
-      Gate_X := Coord (GX);
-      Gate_Y := Coord (GY);
-      for OY in -6 .. 6 loop
-         for OX in -6 .. 6 loop
-            NX := LX + OX;
-            NY := LY + OY;
-            if NX in Coord and then NY in Coord then
-               Dist := abs OX + abs OY;
-               if Dist <= 3 then
-                  Elev (Coord (NX), Coord (NY)) := 0;
-               elsif Dist <= 5 then
-                  Elev (Coord (NX), Coord (NY)) := Natural (Dist - 3);
+      Qh := 0;
+      Qt := 0;
+      for YY in 0 .. Act_N - 1 loop
+         for XX in 0 .. Act_N - 1 loop
+            if Edge_Dist (XX, YY) = 0 then
+               Elev (Coord (XX), Coord (YY)) := 0;
+               Sea (Coord (XX), Coord (YY)) := True;
+               Qh := Qh + 1;
+               Queue_X (Qh) := XX;
+               Queue_Y (Qh) := YY;
+            end if;
+         end loop;
+      end loop;
+
+      while Qt < Qh loop
+         Qt := Qt + 1;
+         X := Queue_X (Qt);
+         Y := Queue_Y (Qt);
+         for Dir in 1 .. 4 loop
+            NX := X;
+            NY := Y;
+            case Dir is
+               when 1 =>
+                  NY := NY - 1;
+               when 2 =>
+                  NX := NX + 1;
+               when 3 =>
+                  NY := NY + 1;
+               when others =>
+                  NX := NX - 1;
+            end case;
+            if In_Map (NX, NY) and then not Sea (Coord (NX), Coord (NY))
+              and then Elev (Coord (NX), Coord (NY)) <= 1
+            then
+               Sea (Coord (NX), Coord (NY)) := True;
+               Elev (Coord (NX), Coord (NY)) := 0;
+               if Qh < Queue_X'Last then
+                  Qh := Qh + 1;
+                  Queue_X (Qh) := NX;
+                  Queue_Y (Qh) := NY;
                end if;
             end if;
          end loop;
       end loop;
-      Elev (Gate_X, Gate_Y) := 1;
+      for YY in 0 .. Act_N - 1 loop
+         for XX in 0 .. Act_N - 1 loop
+            if Sea (Coord (XX), Coord (YY)) and then Edge_Dist (XX, YY) > 3 then
+               Sea (Coord (XX), Coord (YY)) := False;
+               if Elev (Coord (XX), Coord (YY)) < 3 then
+                  Elev (Coord (XX), Coord (YY)) := 3;
+               end if;
+            end if;
+         end loop;
+      end loop;
 
-      Springs :=
-        [1 => (X => 20, Y => 20),
-         2 => (X => 76, Y => 20),
-         3 => (X => 20, Y => 74),
-         4 => (X => 76, Y => 74)];
-      for Which in River_Index loop
-         Best := -1;
-         BX := Integer (Springs (Which).X);
-         BY := Integer (Springs (Which).Y);
-         for OY in -6 .. 6 loop
-            for OX in -6 .. 6 loop
-               NX := Integer (Springs (Which).X) + OX;
-               NY := Integer (Springs (Which).Y) + OY;
-               if NX in 8 .. 87 and then NY in 8 .. 87 then
-                  Score := Integer (Elev (Coord (NX), Coord (NY)));
-                  if Score > Best and then Score >= 8 then
-                     Best := Score;
-                     BX := NX;
-                     BY := NY;
+      for L in 1 .. 2 loop
+         LX (L) := 8 + Integer (Rng.Below (River_S, Positive (Act_N - 16)));
+         LY (L) := 8 + Integer (Rng.Below (River_S, Positive (Act_N - 16)));
+         if Edge_Dist (LX (L), LY (L)) < 8 then
+            LX (L) := Act_N / 2;
+            LY (L) := Act_N / 3 + L * 4;
+         end if;
+         Wide_Lake := 0;
+         for OY in -5 .. 5 loop
+            for OX in -5 .. 5 loop
+               NX := LX (L) + OX;
+               NY := LY (L) + OY;
+               if In_Map (NX, NY) and then abs OX + abs OY <= 4
+                 and then not Sea (Coord (NX), Coord (NY))
+                 and then Wide_Lake < 120
+               then
+                  Elev (Coord (NX), Coord (NY)) := 0;
+                  Lake (Coord (NX), Coord (NY)) := True;
+                  Wide_Lake := Wide_Lake + 1;
+               elsif In_Map (NX, NY) and then abs OX + abs OY = 5
+                 and then not Sea (Coord (NX), Coord (NY))
+                 and then not Lake (Coord (NX), Coord (NY))
+               then
+                  if Elev (Coord (NX), Coord (NY)) < 3 then
+                     Elev (Coord (NX), Coord (NY)) := 3;
                   end if;
                end if;
             end loop;
          end loop;
-         if Elev (Coord (BX), Coord (BY)) < 10 then
-            Elev (Coord (BX), Coord (BY)) := 10;
+         if Wide_Lake > 0 then
+            Lake_N := Lake_N + 1;
+            Lake_Tiles (Lake_N) := Wide_Lake;
+            Add_Region (2, Rng.Below (Name_S, 16), Rng.Below (Name_S, 16));
          end if;
-         Springs (Which) := (X => Coord (BX), Y => Coord (BY));
+      end loop;
+
+      Span := Coarse;
+      for IY in 0 .. (Act_N - 1) / Coarse loop
+         for IX in 0 .. (Act_N - 1) / Coarse loop
+            Rain_C (IX, IY) := 28 + Integer (Rng.Below (Rain_S, 40));
+            Drain_C (IX, IY) := 15 + Integer (Rng.Below (Drain_S, 70));
+         end loop;
+      end loop;
+      for YY in 0 .. Act_N - 1 loop
+         for XX in 0 .. Act_N - 1 loop
+            CX := XX / Coarse;
+            CY := YY / Coarse;
+            TX := XX mod Coarse;
+            TY := YY mod Coarse;
+            if CX >= CMax then
+               CX := CMax - 1;
+            end if;
+            if CY >= CMax then
+               CY := CMax - 1;
+            end if;
+            V := Smooth
+              (Smooth (Rain_C (CX, CY), Rain_C (CX + 1, CY), TX, Span),
+               Smooth (Rain_C (CX, CY + 1), Rain_C (CX + 1, CY + 1), TX, Span),
+               TY, Span);
+            V := V + (Act_N - XX) * 8 / Act_N;
+            if Act_Preset = 1 then
+               V := V + 12;
+            elsif Act_Preset = 2 then
+               V := V - 12;
+            end if;
+            Rain_F (Coord (XX), Coord (YY)) := Natural (Clamp (V, 12, 95));
+            V := Smooth
+              (Smooth (Drain_C (CX, CY), Drain_C (CX + 1, CY), TX, Span),
+               Smooth (Drain_C (CX, CY + 1), Drain_C (CX + 1, CY + 1), TX, Span),
+               TY, Span);
+            Drain_F (Coord (XX), Coord (YY)) := Natural (Clamp (V, 5, 95));
+         end loop;
+      end loop;
+
+      for Q in River_Index loop
+         BX := Integer'Max (8, Act_N / 8);
+         BY := BX;
+         if Q = 2 or else Q = 4 then
+            BX := Act_N - 1 - BX;
+         end if;
+         if Q = 3 or else Q = 4 then
+            BY := Act_N - 1 - BY;
+         end if;
+         BX := Clamp
+           (BX + Integer (Rng.Below (River_S, 7)) - 3, 4, Act_N - 5);
+         BY := Clamp
+           (BY + Integer (Rng.Below (River_S, 7)) - 3, 4, Act_N - 5);
+         Best := -1;
+         for OY in -4 .. 4 loop
+            for OX in -4 .. 4 loop
+               NX := BX + OX;
+               NY := BY + OY;
+               if In_Map (NX, NY)
+                 and then Elev (Coord (NX), Coord (NY)) > Best
+               then
+                  Best := Elev (Coord (NX), Coord (NY));
+                  X := NX;
+                  Y := NY;
+               end if;
+            end loop;
+         end loop;
+         if Best < 8 then
+            Elev (Coord (X), Coord (Y)) := 8;
+         end if;
+         Springs (Q) := (X => Coord (X), Y => Coord (Y));
       end loop;
 
       for Which in River_Index loop
@@ -707,14 +736,12 @@ package body Island.Map is
          Y := Integer (Springs (Which).Y);
          Step := 0;
          Seen := [others => [others => False]];
-         Prev_H := Integer (Elev (Coord (X), Coord (Y)));
-         Wide := 1;
-         while Step < River_Max - 4 loop
+         Prev_H := Elev (Coord (X), Coord (Y));
+         while Step < River_Max - 2 loop
             Step := Step + 1;
             River_Paths (Which) (Step) := (X => Coord (X), Y => Coord (Y));
-            River_Wide (Which, Step) := Wide;
             Seen (Coord (X), Coord (Y)) := True;
-            exit when X = GX and then Y = GY;
+            exit when Lake (Coord (X), Coord (Y));
             Best := Integer'Last;
             BX := X;
             BY := Y;
@@ -731,12 +758,14 @@ package body Island.Map is
                   when others =>
                      NX := NX - 1;
                end case;
-               if NX in 4 .. 91 and then NY in 4 .. 91
-                 and then not Seen (Coord (NX), Coord (NY))
-                 and then not Kept (NX, NY)
-               then
-                  Dist := abs (NX - GX) + abs (NY - GY);
-                  Score := Dist * 4 + Integer (Elev (Coord (NX), Coord (NY)));
+               if In_Map (NX, NY) and then not Seen (Coord (NX), Coord (NY)) then
+                  Dist := abs (NX - LX (1)) + abs (NY - LY (1));
+                  Score := Elev (Coord (NX), Coord (NY)) + Dist * 4;
+                  if Lake (Coord (NX), Coord (NY)) then
+                     Score := -1;
+                  elsif Sea (Coord (NX), Coord (NY)) then
+                     Score := Score + 500;
+                  end if;
                   if Score < Best then
                      Best := Score;
                      BX := NX;
@@ -745,373 +774,267 @@ package body Island.Map is
                end if;
             end loop;
             exit when BX = X and then BY = Y;
-            Dist := abs (BX - GX) + abs (BY - GY);
-            Desired := 1 + Dist / 5;
-            if Desired > Prev_H then
-               Desired := Prev_H;
-            end if;
-            H := Integer (Elev (Coord (BX), Coord (BY)));
-            if Desired < 1 then
-               Desired := 1;
-            end if;
-            if H >= Prev_H then
-               if Rand (Gen, Which, Natural (Step)) mod 10 < 4
-                 and then H > Desired + 1 and then Dist > 6
-               then
-                  --  A side hollow becomes a pond. The channel itself stays dry.
-                  for OY in -1 .. 1 loop
-                     for OX in -1 .. 1 loop
-                        NX := BX + OX;
-                        NY := BY + OY;
-                        if NX in Coord and then NY in Coord
-                          and then (NX /= BX or else NY /= BY)
-                          and then Elev (Coord (NX), Coord (NY)) <= Natural (Prev_H)
-                          and then not Kept (NX, NY)
-                        then
-                           Elev (Coord (NX), Coord (NY)) := 0;
-                        end if;
-                     end loop;
-                  end loop;
-               end if;
-               Elev (Coord (BX), Coord (BY)) := Natural (Desired);
-            elsif H > Desired then
-               Elev (Coord (BX), Coord (BY)) := Natural (Desired);
-            end if;
-            if Elev (Coord (BX), Coord (BY)) > Natural (Prev_H) then
-               Elev (Coord (BX), Coord (BY)) := Natural (Prev_H);
-            end if;
-            if Elev (Coord (BX), Coord (BY)) = 0 then
-               Elev (Coord (BX), Coord (BY)) := 1;
-            end if;
-            Prev_H := Integer (Elev (Coord (BX), Coord (BY)));
-            X := BX;
-            Y := BY;
-            for Earlier in River_Index loop
-               if Earlier < Which then
-                  for S in 1 .. River_Lens (Earlier) loop
-                     if River_Paths (Earlier) (S).X = Coord (X)
-                       and then River_Paths (Earlier) (S).Y = Coord (Y)
-                     then
-                        Wide := 2;
-                        if River_Wide (Earlier, S) < 3 then
-                           River_Wide (Earlier, S) := River_Wide (Earlier, S) + 1;
-                        end if;
-                     end if;
-                  end loop;
-               end if;
-            end loop;
-         end loop;
-         if Step < River_Max - 3 and then X = GX and then Y = GY then
-            H := Integer (Elev (Gate_X, Gate_Y));
-            if GX - 1 in Coord and then H > 0 then
-               Elev (Coord (GX - 1), Gate_Y) := Natural (H);
-               Step := Step + 1;
-               River_Paths (Which) (Step) := (X => Coord (GX - 1), Y => Gate_Y);
-               River_Wide (Which, Step) := 1;
-            end if;
-            if GX + 1 in Coord and then H > 0 and then Step < River_Max - 1 then
-               Elev (Coord (GX + 1), Gate_Y) := Natural (H);
-               Step := Step + 1;
-               River_Paths (Which) (Step) := (X => Coord (GX + 1), Y => Gate_Y);
-               River_Wide (Which, Step) := 1;
-            end if;
-            NX := LX;
-            if GY < LY then
-               NY := GY + 1;
+            if Sea (Coord (BX), Coord (BY)) or else Lake (Coord (BX), Coord (BY)) then
+               X := BX;
+               Y := BY;
             else
-               NY := GY - 1;
+               H := Elev (Coord (BX), Coord (BY));
+               if H >= Prev_H then
+                  H := Prev_H - 1;
+                  if H < 1 then
+                     H := 1;
+                  end if;
+                  Elev (Coord (BX), Coord (BY)) := H;
+               end if;
+               if Elev (Coord (BX), Coord (BY)) > Prev_H then
+                  Elev (Coord (BX), Coord (BY)) := Prev_H;
+               end if;
+               Prev_H := Elev (Coord (BX), Coord (BY));
+               X := BX;
+               Y := BY;
             end if;
-            if NX in Coord and then NY in Coord and then Step < River_Max then
-               Elev (Coord (NX), Coord (NY)) := 0;
-               Step := Step + 1;
-               River_Paths (Which) (Step) := (X => Coord (NX), Y => Coord (NY));
-               River_Wide (Which, Step) := 2;
-            end if;
-         elsif Step < River_Max and then Elev (Coord (X), Coord (Y)) > 0 then
-            Step := Step + 1;
-            River_Paths (Which) (Step) := (X => Gate_X, Y => Gate_Y);
-            Elev (Gate_X, Gate_Y) := 0;
+         end loop;
+         if Step < River_Max and then not Sea (Coord (X), Coord (Y))
+           and then not Lake (Coord (X), Coord (Y))
+         then
+            Elev (Coord (X), Coord (Y)) := 0;
+            Lake (Coord (X), Coord (Y)) := True;
          end if;
          River_Lens (Which) := Step;
+         Add_Region (3, Rng.Below (Name_S, 16), Rng.Below (Name_S, 16));
       end loop;
 
-      --  Overflow from the lake toward the sea, one cell wide.
-      X := LX;
-      Y := LY + 4;
-      while Y < 93 and then Y in Coord and then X < 90 loop
-         if Kept (X, Y) then
-            X := X + 1;
-         else
-            Elev (Coord (X), Coord (Y)) := 0;
-            Y := Y + 1;
-         end if;
-      end loop;
-
-      for YY in Coord loop
-         for XX in Coord loop
-            if XX <= 2 or else YY <= 2 or else XX >= 93 or else YY >= 93 then
-               Elev (XX, YY) := 0;
-            end if;
-         end loop;
-      end loop;
-      Elev (Pond_X, Pond_Y) := 0;
-      Elev (57, 62) := 0;
-      Elev (83, 62) := 0;
-      Elev (70, 54) := 0;
-      declare
-         type Fish_Spot is record
-            X, Y : Coord;
-         end record;
-         Spots : constant array (1 .. 4) of Fish_Spot :=
-           [1 => (Pond_X, Pond_Y), 2 => (57, 62), 3 => (83, 62), 4 => (70, 54)];
-         Has : Boolean;
-      begin
-         for I in Spots'Range loop
-            Has := False;
-            for Dir in 1 .. 4 loop
-               NX := Integer (Spots (I).X);
-               NY := Integer (Spots (I).Y);
-               case Dir is
-                  when 1 =>
-                     NY := NY - 1;
-                  when 2 =>
-                     NX := NX + 1;
-                  when 3 =>
-                     NY := NY + 1;
-                  when others =>
-                     NX := NX - 1;
-               end case;
-               if NX in Coord and then NY in Coord
-                 and then Elev (Coord (NX), Coord (NY)) in 1 .. 3
+      if Act_N > 60 then
+         for YY in 0 .. Act_N - 1 loop
+            for XX in 0 .. Act_N - 1 loop
+               if XX <= 2 or else YY <= 2 or else XX >= Act_N - 3
+                 or else YY >= Act_N - 3
                then
-                  Has := True;
+                  if not (XX = Pond_X and then YY = Pond_Y) then
+                     Elev (Coord (XX), Coord (YY)) := 0;
+                     Sea (Coord (XX), Coord (YY)) := True;
+                     Lake (Coord (XX), Coord (YY)) := False;
+                  end if;
                end if;
             end loop;
-            if not Has and then Spots (I).X < 90 then
-               Elev (Spots (I).X + 1, Spots (I).Y) := 2;
-            end if;
          end loop;
-      end;
-      for YY in Coord loop
-         for XX in Coord loop
-            if Clearing (XX, YY) and then not Pond (XX, YY) and then Elev (XX, YY) = 0 then
-               Elev (XX, YY) := 4;
-            end if;
-            if Clearing (XX, YY) and then Elev (XX, YY) > 10 and then not Pond (XX, YY) then
-               Elev (XX, YY) := 6;
-            end if;
-         end loop;
-      end loop;
-      for G in Grove_Index loop
-         for K in 0 .. 7 loop
-            declare
-               P : constant Spot := Bush_Off (Groves (G), K);
-            begin
-               if not Pond (P.X, P.Y) and then Elev (P.X, P.Y) = 0 then
-                  Elev (P.X, P.Y) := 5;
-               end if;
-            end;
-         end loop;
-      end loop;
-      if not Pond (30, 30) then
-         Elev (30, 30) := 5;
-      end if;
-      if not Pond (31, 30) then
-         Elev (31, 30) := 5;
-      end if;
-      Elev (18, 18) := 5;
-      Elev (18, 19) := 5;
-      Elev (78, 18) := 5;
-      Elev (78, 19) := 5;
-      Elev (18, 78) := 5;
-      Elev (18, 79) := 5;
-      Elev (78, 78) := 5;
-      Elev (78, 79) := 5;
-      for Which in River_Index loop
-         if River_Lens (Which) >= 2 then
-            for S in 1 .. River_Lens (Which) - 1 loop
-               if Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) = 0 then
-                  Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) := 1;
+         for OY in -4 .. 4 loop
+            for OX in -4 .. 4 loop
+               NX := Integer (Start_X) + OX;
+               NY := Integer (Start_Y) + OY;
+               if In_Map (NX, NY) and then not Pond (Coord (NX), Coord (NY)) then
+                  Elev (Coord (NX), Coord (NY)) := 6;
+                  Sea (Coord (NX), Coord (NY)) := False;
+                  Lake (Coord (NX), Coord (NY)) := False;
                end if;
             end loop;
-            for S in 2 .. River_Lens (Which) - 1 loop
-               if Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
-                 > Elev (River_Paths (Which) (S - 1).X, River_Paths (Which) (S - 1).Y)
-               then
-                  Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) :=
-                    Elev (River_Paths (Which) (S - 1).X, River_Paths (Which) (S - 1).Y);
-               end if;
-            end loop;
-            Elev
-              (River_Paths (Which) (River_Lens (Which)).X,
-               River_Paths (Which) (River_Lens (Which)).Y) := 0;
+         end loop;
+         if In_Map (Integer (Pond_X), Integer (Pond_Y)) then
+            Elev (Pond_X, Pond_Y) := 0;
+            Sea (Pond_X, Pond_Y) := False;
+            Lake (Pond_X, Pond_Y) := True;
          end if;
-      end loop;
-      for Which in River_Index loop
+         if In_Map (3, Integer (Start_Y)) then
+            Elev (3, Start_Y) := 5;
+            Sea (3, Start_Y) := False;
+            Lake (3, Start_Y) := False;
+         end if;
          declare
-            Placed : Boolean := False;
-            PX, PY, NX, NY : Integer;
+            type Pin is record
+               X, Y : Coord;
+            end record;
+            Pins : constant array (1 .. 8) of Pin :=
+              [1 => (30, 30), 2 => (31, 30), 3 => (18, 18),
+               4 => (18, 19), 5 => (41, 40), 6 => (40, 40),
+               7 => (16, 16), 8 => (16, 17)];
          begin
-            for S in 1 .. River_Lens (Which) - 1 loop
-               exit when Placed or else S > 12;
-               PX := Integer (River_Paths (Which) (S).X);
-               PY := Integer (River_Paths (Which) (S).Y);
-               if Elev (Coord (PX), Coord (PY)) in 1 .. 8 then
-                  for Dir in 1 .. 4 loop
-                     NX := PX;
-                     NY := PY;
-                     case Dir is
-                        when 1 =>
-                           NY := NY - 1;
-                        when 2 =>
-                           NX := NX + 1;
-                        when 3 =>
-                           NY := NY + 1;
-                        when others =>
-                           NX := NX - 1;
-                     end case;
-                     if NX in 6 .. 89 and then NY in 6 .. 89 then
-                        declare
-                           On_Path : Boolean := False;
-                        begin
-                           for T in 1 .. River_Lens (Which) loop
-                              if Integer (River_Paths (Which) (T).X) = NX
-                                and then Integer (River_Paths (Which) (T).Y) = NY
-                              then
-                                 On_Path := True;
-                              end if;
-                           end loop;
-                           if On_Path then
-                              null;
-                           elsif Elev (Coord (NX), Coord (NY)) in 2 .. 8 then
-                              Placed := True;
-                           elsif Elev (Coord (NX), Coord (NY)) > 0 then
-                              Elev (Coord (NX), Coord (NY)) := 5;
-                              Placed := True;
-                           end if;
-                        end;
-                     end if;
-                     exit when Placed;
-                  end loop;
+            for I in Pins'Range loop
+               if In_Map (Integer (Pins (I).X), Integer (Pins (I).Y)) then
+                  Elev (Pins (I).X, Pins (I).Y) := 6;
+                  Sea (Pins (I).X, Pins (I).Y) := False;
+                  Lake (Pins (I).X, Pins (I).Y) := False;
                end if;
             end loop;
          end;
+         for Which in River_Index loop
+            if River_Lens (Which) >= 2 then
+               for S in 1 .. River_Lens (Which) - 1 loop
+                  if Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) < 1
+                    and then not Lake (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+                    and then not Sea (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+                  then
+                     Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) := 1;
+                  end if;
+               end loop;
+               for S in 2 .. River_Lens (Which) loop
+                  if not Sea (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+                    and then not Lake (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+                    and then Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+                      > Elev (River_Paths (Which) (S - 1).X,
+                              River_Paths (Which) (S - 1).Y)
+                  then
+                     Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) :=
+                       Elev (River_Paths (Which) (S - 1).X,
+                             River_Paths (Which) (S - 1).Y);
+                  end if;
+               end loop;
+            end if;
+         end loop;
+      end if;
+
+      for F in 1 .. 4 loop
+         X := 6 + Integer (Rng.Below (Name_S, Positive (Act_N - 12)));
+         Y := 6 + Integer (Rng.Below (Name_S, Positive (Act_N - 12)));
+         if In_Map (X, Y) and then not Sea (Coord (X), Coord (Y))
+           and then Rain_F (Coord (X), Coord (Y)) >= 50
+         then
+            Add_Region (4, Rng.Below (Name_S, 16), Rng.Below (Name_S, 16));
+         end if;
       end loop;
    end Generate;
 
    function Map_Ok return Boolean is
-      Prev, Here : Natural;
+      Land, Live, Prev, Here : Natural;
       Camps : Natural := 0;
-      Used_X : array (1 .. 4) of Integer := [others => -1];
-      Used_Y : array (1 .. 4) of Integer := [others => -1];
-      Far : Boolean;
-      NX, NY : Integer;
    begin
       if Ranges < 1 then
+         Note (1);
          return False;
       end if;
       for Which in River_Index loop
-         if River_Lens (Which) < 4 then
+         if River_Lens (Which) < 3 then
+            Note (2);
             return False;
          end if;
-         if Elev (River_Paths (Which) (River_Lens (Which)).X,
-                  River_Paths (Which) (River_Lens (Which)).Y) /= 0
+         if not Sea (River_Paths (Which) (River_Lens (Which)).X,
+                     River_Paths (Which) (River_Lens (Which)).Y)
+           and then not Lake (River_Paths (Which) (River_Lens (Which)).X,
+                              River_Paths (Which) (River_Lens (Which)).Y)
          then
+            Note (2);
             return False;
          end if;
-         Prev := Elev (River_Paths (Which) (1).X, River_Paths (Which) (1).Y);
+         Prev := Natural (Elev (River_Paths (Which) (1).X,
+                                River_Paths (Which) (1).Y));
          for S in 2 .. River_Lens (Which) loop
-            Here := Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y);
-            if Here > Prev then
+            Here := Natural (Elev (River_Paths (Which) (S).X,
+                                   River_Paths (Which) (S).Y));
+            if Here > Prev
+              and then not Sea (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+              and then not Lake (River_Paths (Which) (S).X, River_Paths (Which) (S).Y)
+            then
+               Note (3);
                return False;
             end if;
             Prev := Here;
          end loop;
       end loop;
-      for Which in River_Index loop
-         for S in 1 .. River_Lens (Which) loop
-            if Elev (River_Paths (Which) (S).X, River_Paths (Which) (S).Y) in 1 .. 8 then
-               for Dir in 1 .. 4 loop
-                  NX := Integer (River_Paths (Which) (S).X);
-                  NY := Integer (River_Paths (Which) (S).Y);
-                  case Dir is
-                     when 1 =>
-                        NY := NY - 1;
-                     when 2 =>
-                        NX := NX + 1;
-                     when 3 =>
-                        NY := NY + 1;
-                     when others =>
-                        NX := NX - 1;
-                  end case;
-                  if NX in 6 .. 89 and then NY in 6 .. 89
-                    and then Elev (Coord (NX), Coord (NY)) in 2 .. 8
-                  then
-                     Far := True;
-                     for C in 1 .. Camps loop
-                        if abs (Used_X (C) - NX) + abs (Used_Y (C) - NY) < 12 then
-                           Far := False;
-                        end if;
-                     end loop;
-                     if Far and then Camps < 4 then
-                        Camps := Camps + 1;
-                        Used_X (Camps) := NX;
-                        Used_Y (Camps) := NY;
-                     end if;
-                  end if;
-               end loop;
+      Land := 0;
+      Live := 0;
+      for YY in 0 .. Act_N - 1 loop
+         for XX in 0 .. Act_N - 1 loop
+            if not Sea (Coord (XX), Coord (YY))
+              and then not Lake (Coord (XX), Coord (YY))
+            then
+               Land := Land + 1;
+               if Rain_F (Coord (XX), Coord (YY)) >= 28
+                 and then Elev (Coord (XX), Coord (YY)) < 18
+               then
+                  Live := Live + 1;
+               end if;
             end if;
          end loop;
       end loop;
-      return Camps >= 4;
+      if Land * 3 < Act_N * Act_N then
+         Note (5);
+         return False;
+      end if;
+      if Live * 2 < Land then
+         Note (6);
+         return False;
+      end if;
+      if Act_N > 90 then
+         if not Sea (18, 18) then
+            Camps := Camps + 1;
+         end if;
+         if In_Map (Act_N - 19, 18) and then not Sea (Coord (Act_N - 19), 18) then
+            Camps := Camps + 1;
+         end if;
+         if In_Map (18, Act_N - 19) and then not Sea (18, Coord (Act_N - 19)) then
+            Camps := Camps + 1;
+         end if;
+         if In_Map (Act_N - 19, Act_N - 19)
+           and then not Sea (Coord (Act_N - 19), Coord (Act_N - 19))
+         then
+            Camps := Camps + 1;
+         end if;
+      else
+         Camps := 4;
+      end if;
+      if Camps < 4 then
+         Note (4);
+         return False;
+      end if;
+      return True;
    end Map_Ok;
 
    procedure Ensure_World (Seed : Seed_Value) is
       Gen : Seed_Value;
    begin
-      if World_Ready and then World_Seed = Seed then
+      if World_Ready and then World_Seed = Seed and then World_Code = Act_Code
+        and then World_Pole = Act_Pole and then World_Pre = Act_Preset
+      then
          return;
       end if;
       Rejects := 0;
+      Reason_N := 0;
+      Reasons := [others => 0];
       Gen := Seed;
       for Try in 1 .. 6 loop
          Generate (Gen);
          exit when Map_Ok;
          Rejects := Rejects + 1;
-         declare
-            use Interfaces;
-         begin
-            Gen := Seed_Value (Mix (Seed, Try, 17) mod 1_000_000_000);
-         end;
+         Gen := Seed_Value (Rng.Mix (Interfaces.Unsigned_32 (Seed),
+                                     Interfaces.Unsigned_32 (Try), 17) mod 1_000_000_000);
       end loop;
       World_Seed := Seed;
+      World_Code := Act_Code;
+      World_Pole := Act_Pole;
+      World_Pre := Act_Preset;
       World_Ready := True;
    end Ensure_World;
 
    function Land_Ok (Seed : Seed_Value; X, Y : Integer) return Boolean is
    begin
-      if X not in Coord or else Y not in Coord then
-         return False;
-      end if;
-      if X <= 5 or else Y <= 5 or else X >= 90 or else Y >= 90 then
+      if not In_Map (X, Y) then
          return False;
       end if;
       Ensure_World (Seed);
-      return Elev (Coord (X), Coord (Y)) in 2 .. 12;
+      return Elev (Coord (X), Coord (Y)) in 3 .. 16
+        and then not Sea (Coord (X), Coord (Y))
+        and then not Lake (Coord (X), Coord (Y));
    end Land_Ok;
 
    function Height (Seed : Seed_Value; X, Y : Coord) return Natural is
    begin
       Ensure_World (Seed);
-      return Elev (X, Y);
+      if not In_Map (Integer (X), Integer (Y)) then
+         return 0;
+      end if;
+      if Elev (X, Y) < 0 then
+         return 0;
+      end if;
+      return Natural (Elev (X, Y));
    end Height;
 
    function Mountain (Seed : Seed_Value; X, Y : Coord) return Boolean is
    begin
-      return Height (Seed, X, Y) >= 16;
+      return Height (Seed, X, Y) >= 18;
    end Mountain;
 
-   function Neighbour_H (Seed : Seed_Value; X, Y, DX, DY : Integer) return Natural is
+   function Neighbour_H
+     (Seed : Seed_Value; X, Y, DX, DY : Integer) return Natural
+   is
       NX : constant Integer := X + DX;
       NY : constant Integer := Y + DY;
    begin
@@ -1123,15 +1046,14 @@ package body Island.Map is
 
    function Pass (Seed : Seed_Value; X, Y : Coord) return Boolean is
       H : constant Natural := Height (Seed, X, Y);
-      N : constant Natural := Neighbour_H (Seed, Integer (X), Integer (Y), 0, -1);
-      S : constant Natural := Neighbour_H (Seed, Integer (X), Integer (Y), 0, 1);
-      E : constant Natural := Neighbour_H (Seed, Integer (X), Integer (Y), 1, 0);
-      W : constant Natural := Neighbour_H (Seed, Integer (X), Integer (Y), -1, 0);
    begin
       if H < 8 then
          return False;
       end if;
-      return (N > H and then S > H) or else (E > H and then W > H);
+      return (Neighbour_H (Seed, Integer (X), Integer (Y), 0, -1) > H
+              and then Neighbour_H (Seed, Integer (X), Integer (Y), 0, 1) > H)
+        or else (Neighbour_H (Seed, Integer (X), Integer (Y), 1, 0) > H
+                 and then Neighbour_H (Seed, Integer (X), Integer (Y), -1, 0) > H);
    end Pass;
 
    function Uphill
@@ -1143,48 +1065,229 @@ package body Island.Map is
    end Uphill;
 
    function Rain (Seed : Seed_Value; X, Y : Coord) return Natural is
-      Wet    : Integer;
-      Shadow : Boolean := False;
-      NX     : Integer;
    begin
       Ensure_World (Seed);
-      Wet := 78 - (Integer (X) * 55) / (Grid_Size - 1);
-      NX := Integer (X) - 1;
-      while NX >= Integer (X) - 8 and then NX >= 0 loop
-         if Elev (Coord (NX), Y) >= Elev (X, Y) + 5 then
-            Shadow := True;
-         end if;
-         NX := NX - 1;
-      end loop;
-      if Shadow then
-         Wet := Wet - 40;
+      if not In_Map (Integer (X), Integer (Y)) then
+         return 0;
       end if;
-      if Wet < 0 then
-         Wet := 0;
-      end if;
-      return Natural (Wet);
+      return Rain_F (X, Y);
    end Rain;
+
+   function Drainage (Seed : Seed_Value; X, Y : Coord) return Natural is
+   begin
+      Ensure_World (Seed);
+      if not In_Map (Integer (X), Integer (Y)) then
+         return 0;
+      end if;
+      return Drain_F (X, Y);
+   end Drainage;
+
+   function Temperature (Seed : Seed_Value; X, Y : Coord) return Integer is
+      Along : Integer;
+   begin
+      Ensure_World (Seed);
+      if not In_Map (Integer (X), Integer (Y)) then
+         return 0;
+      end if;
+      case Act_Pole is
+         when 1 =>
+            Along := Act_N - 1 - Integer (Y);
+         when 2 =>
+            Along := Integer (X);
+         when 3 =>
+            Along := Act_N - 1 - Integer (X);
+         when others =>
+            Along := Integer (Y);
+      end case;
+      return 10 + Along * 80 / (Act_N - 1) - Elev (X, Y) / 3;
+   end Temperature;
+
+   function Biome (Seed : Seed_Value; X, Y : Coord) return Natural is
+      H : Integer;
+      R : Natural;
+      D : Natural;
+      T : Integer;
+   begin
+      Ensure_World (Seed);
+      if not In_Map (Integer (X), Integer (Y)) then
+         return 0;
+      end if;
+      if Sea (X, Y) then
+         return 0;
+      end if;
+      if Lake (X, Y) or else Elev (X, Y) <= 0 then
+         return 13;
+      end if;
+      H := Elev (X, Y);
+      if H <= 4 then
+         if (Integer (X) > 0 and then Sea (Coord (Integer (X) - 1), Y))
+           or else (Integer (X) + 1 < Act_N and then Sea (Coord (Integer (X) + 1), Y))
+           or else (Integer (Y) > 0 and then Sea (X, Coord (Integer (Y) - 1)))
+           or else (Integer (Y) + 1 < Act_N and then Sea (X, Coord (Integer (Y) + 1)))
+         then
+            return 1;
+         end if;
+      end if;
+      if H >= 18 then
+         return 4;
+      end if;
+      R := Rain_F (X, Y);
+      D := Drain_F (X, Y);
+      T := Temperature (Seed, X, Y);
+      if T <= -5 then
+         if R < 30 then
+            return 2;
+         end if;
+         return 3;
+      end if;
+      if H >= 13 then
+         return 9;
+      end if;
+      if R >= 65 and then D < 40 then
+         return 5;
+      end if;
+      if R < 22 then
+         return 7;
+      end if;
+      if T in -4 .. 9 and then R >= 35 then
+         return 8;
+      end if;
+      if T >= 85 and then R >= 48 then
+         return 8;
+      end if;
+      if R >= 52 and then D >= 42 then
+         return 8;
+      end if;
+      if T >= 66 and then R in 32 .. 55 then
+         return 11;
+      end if;
+      if R < 38 then
+         return 10;
+      end if;
+      if D < 38 then
+         return 6;
+      end if;
+      return 12;
+   end Biome;
 
    function Fertile (Seed : Seed_Value; X, Y : Coord) return Boolean is
    begin
-      if Height (Seed, X, Y) not in 2 .. 6 then
-         return False;
-      end if;
-      if Rain (Seed, X, Y) < 40 then
-         return False;
-      end if;
-      return On_River (Seed, X, Y)
-        or else (X > Coord'First and then On_River (Seed, X - 1, Y))
-        or else (X < Coord'Last and then On_River (Seed, X + 1, Y))
-        or else (Y > Coord'First and then On_River (Seed, X, Y - 1))
-        or else (Y < Coord'Last and then On_River (Seed, X, Y + 1));
+      return Food_Yield (Seed, X, Y) >= 3
+        and then (On_River (Seed, X, Y)
+                  or else (X > Coord'First and then On_River (Seed, X - 1, Y))
+                  or else (Y > Coord'First and then On_River (Seed, X, Y - 1)));
    end Fertile;
+
+   function Food_Yield (Seed : Seed_Value; X, Y : Coord) return Natural is
+   begin
+      case Biome (Seed, X, Y) is
+         when 8 =>
+            return 5;
+         when 12 =>
+            return 4;
+         when 11 =>
+            return 3;
+         when 6 | 9 | 10 =>
+            return 2;
+         when 1 | 3 | 5 =>
+            return 1;
+         when others =>
+            return 0;
+      end case;
+   end Food_Yield;
+
+   function Thirst_Cost (Seed : Seed_Value; X, Y : Coord) return Natural is
+   begin
+      if Biome (Seed, X, Y) = 7 then
+         return 2;
+      end if;
+      return 1;
+   end Thirst_Cost;
+
+   function Settle_Score (Seed : Seed_Value; X, Y : Coord) return Natural is
+      Score : Natural;
+   begin
+      Score := Food_Yield (Seed, X, Y) * 5;
+      if Drinkable (Seed, X, Y) then
+         Score := Score + 8;
+      end if;
+      if Biome (Seed, X, Y) = 1 then
+         Score := Score + 2;
+      end if;
+      if Height (Seed, X, Y) in 4 .. 10 then
+         Score := Score + 3;
+      end if;
+      return Score;
+   end Settle_Score;
+
+   function Lake_Count (Seed : Seed_Value) return Natural is
+   begin
+      Ensure_World (Seed);
+      return Lake_N;
+   end Lake_Count;
+
+   function Lake_Area (Seed : Seed_Value; Which : Natural) return Natural is
+   begin
+      Ensure_World (Seed);
+      if Which in 1 .. Lake_N then
+         return Lake_Tiles (Which);
+      end if;
+      return 0;
+   end Lake_Area;
 
    function Rejection_Count (Seed : Seed_Value) return Natural is
    begin
       Ensure_World (Seed);
       return Rejects;
    end Rejection_Count;
+
+   function Reason_Count (Seed : Seed_Value) return Natural is
+   begin
+      Ensure_World (Seed);
+      return Reason_N;
+   end Reason_Count;
+
+   function Reason_Code (Seed : Seed_Value; Index : Natural) return Natural is
+   begin
+      Ensure_World (Seed);
+      if Index in 1 .. Reason_N then
+         return Reasons (Index);
+      end if;
+      return 0;
+   end Reason_Code;
+
+   function Region_Count (Seed : Seed_Value) return Natural is
+   begin
+      Ensure_World (Seed);
+      return Reg_N;
+   end Region_Count;
+
+   function Region_Kind (Seed : Seed_Value; Index : Natural) return Natural is
+   begin
+      Ensure_World (Seed);
+      if Index in 1 .. Reg_N then
+         return Regs (Index).Kind;
+      end if;
+      return 0;
+   end Region_Kind;
+
+   function Region_A (Seed : Seed_Value; Index : Natural) return Natural is
+   begin
+      Ensure_World (Seed);
+      if Index in 1 .. Reg_N then
+         return Regs (Index).A;
+      end if;
+      return 0;
+   end Region_A;
+
+   function Region_B (Seed : Seed_Value; Index : Natural) return Natural is
+   begin
+      Ensure_World (Seed);
+      if Index in 1 .. Reg_N then
+         return Regs (Index).B;
+      end if;
+      return 0;
+   end Region_B;
 
    function River_Length (Seed : Seed_Value; Which : River_Index) return Natural is
    begin
@@ -1204,7 +1307,6 @@ package body Island.Map is
    end River_Step;
 
    function On_River (Seed : Seed_Value; X, Y : Coord) return Boolean is
-      Side : Integer;
    begin
       Ensure_World (Seed);
       for Which in River_Index loop
@@ -1214,15 +1316,6 @@ package body Island.Map is
             then
                return True;
             end if;
-            if River_Wide (Which, Step) >= 2 then
-               Side := Integer (River_Paths (Which) (Step).X) + 1;
-               if Side in Coord
-                 and then Coord (Side) = X
-                 and then River_Paths (Which) (Step).Y = Y
-               then
-                  return True;
-               end if;
-            end if;
          end loop;
       end loop;
       return False;
@@ -1230,7 +1323,10 @@ package body Island.Map is
 
    function Drinkable (Seed : Seed_Value; X, Y : Coord) return Boolean is
    begin
-      if Height (Seed, X, Y) = 0 or else On_River (Seed, X, Y) then
+      if Biome (Seed, X, Y) = 13 then
+         return True;
+      end if;
+      if On_River (Seed, X, Y) then
          return True;
       end if;
       if X > Coord'First and then On_River (Seed, X - 1, Y) then
@@ -1247,5 +1343,48 @@ package body Island.Map is
       end if;
       return False;
    end Drinkable;
+
+   function Pick_Fish (Seed : Seed_Value; Which : Fish_Index) return Spot is
+      Seen : Natural := 0;
+      Need : Natural;
+      Bank : Boolean;
+
+      function Bush_Cell (X, Y : Integer) return Boolean is
+         P : Spot;
+      begin
+         for G in Grove_Index loop
+            for K in 0 .. 7 loop
+               P := Bush_Off (Groves (G), K);
+               if Integer (P.X) = X and then Integer (P.Y) = Y then
+                  return True;
+               end if;
+            end loop;
+         end loop;
+         return False;
+      end Bush_Cell;
+   begin
+      Ensure_World (Seed);
+      if Which = 1 and then In_Map (Integer (Pond_X), Integer (Pond_Y)) then
+         return (X => Pond_X, Y => Pond_Y);
+      end if;
+      Need := Which - 1;
+      for YY in 1 .. Act_N - 2 loop
+         for XX in 1 .. Act_N - 2 loop
+            Bank := Elev (Coord (XX + 1), Coord (YY)) in 3 .. 16
+              and then not Sea (Coord (XX + 1), Coord (YY))
+              and then not Lake (Coord (XX + 1), Coord (YY));
+            if Bank
+              and then (Lake (Coord (XX), Coord (YY)) or else Sea (Coord (XX), Coord (YY)))
+              and then not Bush_Cell (XX, YY)
+            then
+               Seen := Seen + 1;
+               if Seen = Need then
+                  return (X => Coord (XX), Y => Coord (YY));
+               end if;
+            end if;
+         end loop;
+      end loop;
+      return (X => Pond_X, Y => Pond_Y);
+   end Pick_Fish;
 
 end Island.Map;

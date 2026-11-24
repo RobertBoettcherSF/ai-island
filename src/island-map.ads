@@ -54,10 +54,10 @@ package Island.Map is
    end record;
 
    Groves : constant array (Grove_Index) of Spot :=
-     [1 => (X => 20, Y => 20),
-      2 => (X => 20, Y => 74),
-      3 => (X => 76, Y => 20),
-      4 => (X => 76, Y => 74),
+     [1 => (X => 16, Y => 16),
+      2 => (X => 16, Y => 112),
+      3 => (X => 112, Y => 16),
+      4 => (X => 112, Y => 112),
       5 => (X => 51, Y => 46),
       6 => (X => 70, Y => 36),
       7 => (X => 36, Y => 74),
@@ -101,9 +101,55 @@ package Island.Map is
    --  How many derived seeds were skipped before this map was accepted.
    function Rejection_Count (Seed : Seed_Value) return Natural;
 
+   --  0 pocket 17, 1 smaller 33, 2 small 65, 3 medium 129, 4 large 257.
+   --  Pole: 0 north, 1 south, 2 east, 3 west. Preset: 0 balanced, 1 lush, 2 arid.
+   procedure Use_Settings (Size_Code, Pole, Preset : Natural);
+
+   function Active_Size return Positive;
+
+   function Size_Code return Natural;
+
+   function Pole return Natural;
+
+   function Preset return Natural;
+
+   --  0 ocean, 1 beach, 2 snow, 3 tundra, 4 mountain, 5 swamp,
+   --  6 marsh, 7 desert, 8 forest, 9 hills, 10 shrubland, 11 savanna,
+   --  12 grassland, 13 lake.
+   function Biome (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   function Drainage (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   function Temperature (Seed : Seed_Value; X, Y : Coord) return Integer;
+
+   function Food_Yield (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   function Settle_Score (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   --  2 on desert, 1 elsewhere. Tundra adds hunger in the folk rules.
+   function Thirst_Cost (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   function Lake_Count (Seed : Seed_Value) return Natural;
+
+   function Lake_Area (Seed : Seed_Value; Which : Natural) return Natural;
+
+   function Reason_Count (Seed : Seed_Value) return Natural;
+
+   function Reason_Code (Seed : Seed_Value; Index : Natural) return Natural;
+
+   Region_Max : constant := 12;
+
+   function Region_Count (Seed : Seed_Value) return Natural;
+
+   function Region_Kind (Seed : Seed_Value; Index : Natural) return Natural;
+
+   function Region_A (Seed : Seed_Value; Index : Natural) return Natural;
+
+   function Region_B (Seed : Seed_Value; Index : Natural) return Natural;
+
    River_Count : constant := 4;
    subtype River_Index is Integer range 1 .. River_Count;
-   River_Max : constant := 120;
+   River_Max : constant := 400;
 
    function River_Length (Seed : Seed_Value; Which : River_Index) return Natural;
 

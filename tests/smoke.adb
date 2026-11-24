@@ -194,8 +194,8 @@ begin
       Island.World.Reset (W);
       W.Folk (2).Group := 2;
       W.Folk (2).Migrate := 1;
-      W.Folk (2).X := 18;
-      W.Folk (2).Y := 19;
+      W.Folk (2).X := 16;
+      W.Folk (2).Y := 17;
       W.Folk (2).Age := 160;
       Island.Folk.Others_Act (W);
       pragma Assert (W.Folk (2).Group = 1);
@@ -389,6 +389,72 @@ begin
          pragma Assert (W.Folk (2).Stones = 1);
          pragma Assert (W.Markets (1).Trades = 1);
       end;
+      pragma Assert (Island.World.Title_Of (19) = 0);
+      pragma Assert (Island.World.Title_Of (20) = 1);
+      pragma Assert (Island.World.Title_Of (50) = 2);
+      pragma Assert (Island.World.Title_Of (80) = 3);
+      pragma Assert (Island.World.Title_Of (110) = 4);
+      pragma Assert (Island.World.Title_Of (140) = 5);
+      pragma Assert (Island.Map.Active_Size = 129);
+      pragma Assert
+        (Island.Map.Temperature (Island.Map.Default_Island_Seed, 64, 8)
+         < Island.Map.Temperature (Island.Map.Default_Island_Seed, 64, 120));
+      pragma Assert (Island.Map.Lake_Count (Island.Map.Default_Island_Seed) <= 2);
+      pragma Assert (Island.Map.Lake_Area (Island.Map.Default_Island_Seed, 1) <= 120);
+      pragma Assert (Island.Map.Lake_Area (Island.Map.Default_Island_Seed, 2) <= 120);
+      declare
+         Land, Sand_N, Live : Natural := 0;
+         Kind : Natural;
+      begin
+         for Y in 0 .. Island.Map.Active_Size - 1 loop
+            for X in 0 .. Island.Map.Active_Size - 1 loop
+               Kind := Island.Map.Biome
+                 (Island.Map.Default_Island_Seed, Island.Coord (X), Island.Coord (Y));
+               if Kind /= 0 and then Kind /= 13 then
+                  Land := Land + 1;
+                  if Kind = 7 or else Kind = 1 then
+                     Sand_N := Sand_N + 1;
+                  end if;
+                  if Kind in 8 .. 12 then
+                     Live := Live + 1;
+                  end if;
+               end if;
+            end loop;
+         end loop;
+         pragma Assert (Land > 1000);
+         pragma Assert (Sand_N * 2 < Land);
+         pragma Assert (Live * 2 > Land / 5);
+      end;
+      Island.Map.Use_Settings (0, 0, 0);
+      pragma Assert (Island.Map.Active_Size = 17);
+      pragma Assert
+        (Island.Map.Terrain_At (Island.Map.Default_Island_Seed, 0, 0) = Island.Water);
+      Island.Map.Use_Settings (3, 0, 0);
+      pragma Assert (Island.Map.Active_Size = 129);
+      Island.World.Reset (W);
+      declare
+         Spot : constant Island.Map.Spot :=
+           Island.Map.Bush (Island.Map.Default_Island_Seed, 1);
+         Old_S, New_S : Natural;
+      begin
+         W.Folk (2).X := Spot.X;
+         W.Folk (2).Y := Spot.Y;
+         if Spot.X > 2 then
+            W.Folk (2).X := Spot.X - 1;
+         end if;
+         W.Folk (2).Belly.Full := 10;
+         W.Folk (2).Age := 160;
+         W.Folk (2).Scout := False;
+         Old_S := Island.Folk.Food_Score (W, W.Folk (2).X, W.Folk (2).Y);
+         Island.Folk.Others_Act (W);
+         New_S := Island.Folk.Food_Score (W, W.Folk (2).X, W.Folk (2).Y);
+         pragma Assert (New_S >= Old_S);
+      end;
+      Island.World.Reset (W);
+      Island.Folk.Leave_Scent (W, 30, 30);
+      Island.Folk.Leave_Scent (W, 31, 30);
+      pragma Assert (Island.World.Trail_Span (W) >= 2);
+      pragma Assert (Island.World.Trail_Peak (W) >= 2);
       Island.World.Reset (W);
       Island.World.Simulate (W, 3000);
       declare

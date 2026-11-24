@@ -127,11 +127,18 @@ package body Island.World is
    procedure Reset
      (S           : out State;
       Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
-      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed)
+      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed;
+      Size_Code   : Natural := 3;
+      Pole_Code   : Natural := 0;
+      Preset_Code : Natural := 0)
    is
    begin
       S.Island_Seed := Island_Seed;
       S.Pop_Seed := Pop_Seed;
+      S.Size_Code := Size_Code;
+      S.Pole_Code := Pole_Code;
+      S.Preset_Code := Preset_Code;
+      Map.Use_Settings (Size_Code, Pole_Code, Preset_Code);
       S.X := Map.Start_X;
       S.Y := Map.Start_Y;
       S.Facing := North;
@@ -524,7 +531,7 @@ package body Island.World is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 8");
+      Put_Text (Buf, Pos, "ai-island 9");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -578,6 +585,12 @@ package body Island.World is
       Put_Nat (Buf, Pos, S.Island_Seed);
       Put_Char (Buf, Pos, ' ');
       Put_Nat (Buf, Pos, S.Pop_Seed);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Size_Code);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Pole_Code);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Preset_Code);
       Put_Char (Buf, Pos, ASCII.LF);
       for I in Folk_Id loop
          if S.Folk (I).Alive then
@@ -959,23 +972,33 @@ package body Island.World is
             Take_Nat (Buf, Pos, Lb, Full_N, 1_000_000, Good);
             Expect (Buf, Pos, Lb, ' ', Good);
             declare
-               Island_N, Pop_N : Natural;
+               Island_N, Pop_N, Size_N, Pole_N, Pre_N : Natural;
             begin
                Take_Nat (Buf, Pos, Lb, Island_N, 2_147_483_647, Good);
                Expect (Buf, Pos, Lb, ' ', Good);
                Take_Nat (Buf, Pos, Lb, Pop_N, 2_147_483_647, Good);
+               Expect (Buf, Pos, Lb, ' ', Good);
+               Take_Nat (Buf, Pos, Lb, Size_N, 4, Good);
+               Expect (Buf, Pos, Lb, ' ', Good);
+               Take_Nat (Buf, Pos, Lb, Pole_N, 3, Good);
+               Expect (Buf, Pos, Lb, ' ', Good);
+               Take_Nat (Buf, Pos, Lb, Pre_N, 2, Good);
                if Good and then Pos = Lb + 1 then
                   Local.Births := Turn_N;
                   Local.Deaths := Full_N;
                   Local.Island_Seed := Island_N;
                   Local.Pop_Seed := Pop_N;
+                  Local.Size_Code := Size_N;
+                  Local.Pole_Code := Pole_N;
+                  Local.Preset_Code := Pre_N;
+                  Map.Use_Settings (Size_N, Pole_N, Pre_N);
                else
                   Good := False;
                end if;
             end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 8" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 9" then
          Good := False;
       end if;
       if Good then
@@ -1511,5 +1534,101 @@ package body Island.World is
          Ok := False;
       end if;
    end Read_Save;
+
+   function Title_Of (Population : Natural) return Natural is
+   begin
+      if Population >= 140 then
+         return 5;
+      elsif Population >= 110 then
+         return 4;
+      elsif Population >= 80 then
+         return 3;
+      elsif Population >= 50 then
+         return 2;
+      elsif Population >= 20 then
+         return 1;
+      else
+         return 0;
+      end if;
+   end Title_Of;
+
+   function Diplomacy (S : State; A, B : Group_Id) return Natural is
+   begin
+      if A = B then
+         return 2;
+      end if;
+      if S.Groups (A).Extinct_Turn > 0 or else S.Groups (B).Extinct_Turn > 0 then
+         return 3;
+      end if;
+      if S.Trust (A) (B) >= 8 then
+         return 2;
+      elsif S.Trust (A) (B) > 2 then
+         return 1;
+      elsif S.Trust (A) (B) < 2 then
+         return 3;
+      else
+         return 0;
+      end if;
+   end Diplomacy;
+
+   function Folk_Value (S : State; Who : Folk_Id; Which : Natural) return Natural is
+   begin
+      return Natural
+        (Rng.Mix (Interfaces.Unsigned_32 (S.Pop_Seed),
+                  Interfaces.Unsigned_32 (Who),
+                  Interfaces.Unsigned_32 (Which)) mod 10);
+   end Folk_Value;
+
+   function Name_Syl (S : State; Group : Group_Id; Which : Natural) return Natural is
+   begin
+      return Natural
+        (Rng.Mix (Interfaces.Unsigned_32 (S.Pop_Seed),
+                  Interfaces.Unsigned_32 (Group) + 20,
+                  Interfaces.Unsigned_32 (Which)) mod 16);
+   end Name_Syl;
+
+   function Trail_Peak (S : State) return Natural is
+      Best : Natural := 0;
+   begin
+      for I in Trail_Id loop
+         if S.Trails (I).Used and then S.Trails (I).Strength > Best then
+            Best := S.Trails (I).Strength;
+         end if;
+      end loop;
+      return Best;
+   end Trail_Peak;
+
+   function Trail_Span (S : State) return Natural is
+      Seen : array (Trail_Id) of Boolean := [others => False];
+      Best : Natural := 0;
+      Count : Natural;
+      procedure Walk (Start : Trail_Id) is
+      begin
+         if Seen (Start) or else not S.Trails (Start).Used then
+            return;
+         end if;
+         Seen (Start) := True;
+         Count := Count + 1;
+         for J in Trail_Id loop
+            if S.Trails (J).Used
+              and then abs (Integer (S.Trails (J).X) - Integer (S.Trails (Start).X))
+                + abs (Integer (S.Trails (J).Y) - Integer (S.Trails (Start).Y)) = 1
+            then
+               Walk (J);
+            end if;
+         end loop;
+      end Walk;
+   begin
+      for I in Trail_Id loop
+         if S.Trails (I).Used and then not Seen (I) then
+            Count := 0;
+            Walk (I);
+            if Count > Best then
+               Best := Count;
+            end if;
+         end if;
+      end loop;
+      return Best;
+   end Trail_Span;
 
 end Island.World;

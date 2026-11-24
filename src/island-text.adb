@@ -581,8 +581,11 @@ package body Island.Text is
          declare
             Island_Seed : constant Map.Seed_Value := S.Island_Seed;
             Pop_Seed    : constant Map.Seed_Value := S.Pop_Seed;
+            Size_Code   : constant Natural := S.Size_Code;
+            Pole_Code   : constant Natural := S.Pole_Code;
+            Preset_Code : constant Natural := S.Preset_Code;
          begin
-            World.Reset (S, Island_Seed, Pop_Seed);
+            World.Reset (S, Island_Seed, Pop_Seed, Size_Code, Pole_Code, Preset_Code);
          end;
          if As_Text then
             Add (B, "A new island. ");

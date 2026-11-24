@@ -16,6 +16,9 @@ procedure Island_CLI is
    Have_Save : Boolean := False;
    Island_Seed : Island.Map.Seed_Value := Island.Map.Default_Island_Seed;
    Pop_Seed    : Island.Map.Seed_Value := Island.Map.Default_Pop_Seed;
+   Size_Code   : Natural := 3;
+   Pole_Code   : Natural := 0;
+   Preset_Code : Natural := 0;
    Save_Path : String (1 .. 512) := [others => ' '];
    Save_Len  : Natural := 0;
    Cmd       : String (1 .. Island.Command_Max) := [others => ' '];
@@ -136,6 +139,47 @@ begin
                      Have_Save := True;
                   end if;
                end;
+            elsif Arg = "--size" or else Arg = "--pole" or else Arg = "--preset" then
+               if I = Argument_Count then
+                  Usage := True;
+               else
+                  I := I + 1;
+                  declare
+                     Word : constant String := Argument (I);
+                  begin
+                     if Arg = "--size" then
+                        if Word = "pocket" then
+                           Size_Code := 0;
+                        elsif Word = "smaller" then
+                           Size_Code := 1;
+                        elsif Word = "small" then
+                           Size_Code := 2;
+                        elsif Word = "large" then
+                           Size_Code := 4;
+                        else
+                           Size_Code := 3;
+                        end if;
+                     elsif Arg = "--pole" then
+                        if Word = "south" then
+                           Pole_Code := 1;
+                        elsif Word = "east" then
+                           Pole_Code := 2;
+                        elsif Word = "west" then
+                           Pole_Code := 3;
+                        else
+                           Pole_Code := 0;
+                        end if;
+                     else
+                        if Word = "lush" then
+                           Preset_Code := 1;
+                        elsif Word = "arid" then
+                           Preset_Code := 2;
+                        else
+                           Preset_Code := 0;
+                        end if;
+                     end if;
+                  end;
+               end if;
             elsif Arg = "--island" or else Arg = "--pop" then
                if I = Argument_Count then
                   Usage := True;
@@ -182,7 +226,7 @@ begin
    end if;
 
    if Is_New (Cmd (1 .. Cmd_Len)) then
-      Island.World.Reset (S, Island_Seed, Pop_Seed);
+      Island.World.Reset (S, Island_Seed, Pop_Seed, Size_Code, Pole_Code, Preset_Code);
       Island.Text.Execute (S, Cmd (1 .. Cmd_Len), As_Text, Reply, Len, Ok);
       if Ok then
          Island_Save.Store (Save_Path (1 .. Save_Len), S, Stored);

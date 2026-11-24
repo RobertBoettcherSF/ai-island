@@ -6,11 +6,11 @@ with Island.Stomach;
 
 package Island.World is
 
-   Save_Max : constant := 32768;
+   Save_Max : constant := 65536;
 
    --  The 0.3.1 run pinned at 35 because only 36 slots existed and the
    --  player's slot is never reused. Homes, not this array, limit births.
-   Max_Folk : constant := 80;
+   Max_Folk : constant := 150;
    subtype Folk_Id is Integer range 1 .. Max_Folk;
    Player_Id : constant Folk_Id := 1;
    Npc_Count : constant := 12;
@@ -195,6 +195,9 @@ package Island.World is
       Deaths      : Natural := 0;
       Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
       Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed;
+      Size_Code   : Natural := 3;
+      Pole_Code   : Natural := 0;
+      Preset_Code : Natural := 0;
       Homes       : Home_Array;
       Piles       : Pile_Array;
       Groups      : Group_Array;
@@ -220,10 +223,25 @@ package Island.World is
 
    function Valid (S : State) return Boolean;
 
+   function Title_Of (Population : Natural) return Natural;
+
+   function Diplomacy (S : State; A, B : Group_Id) return Natural;
+
+   function Folk_Value (S : State; Who : Folk_Id; Which : Natural) return Natural;
+
+   function Name_Syl (S : State; Group : Group_Id; Which : Natural) return Natural;
+
+   function Trail_Span (S : State) return Natural;
+
+   function Trail_Peak (S : State) return Natural;
+
    procedure Reset
      (S           : out State;
       Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
-      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed)
+      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed;
+      Size_Code   : Natural := 3;
+      Pole_Code   : Natural := 0;
+      Preset_Code : Natural := 0)
      with Post =>
        Valid (S) and then Map.Layout_Ok
        and then S.X = Map.Start_X and then S.Y = Map.Start_Y

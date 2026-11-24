@@ -78,7 +78,9 @@ package body Island.API is
    function Cell (X, Y : Integer) return Integer is
    begin
       Ensure;
-      if X not in Coord or else Y not in Coord then
+      if X not in 0 .. Map.Active_Size - 1
+        or else Y not in 0 .. Map.Active_Size - 1
+      then
          return -1;
       end if;
       return Terrain'Pos (Map.Terrain_At (The_State.Island_Seed, Coord (X), Coord (Y)));
@@ -171,12 +173,12 @@ package body Island.API is
 
    function Width return Integer is
    begin
-      return Grid_Size;
+      return Map.Active_Size;
    end Width;
 
    function Height return Integer is
    begin
-      return Grid_Size;
+      return Map.Active_Size;
    end Height;
 
    Max_Samples : constant := 128;
@@ -399,12 +401,12 @@ package body Island.API is
       return N_Samples;
    end Sample_Count;
 
-   Map_Bytes : array (0 .. Grid_Size * Grid_Size - 1) of Interfaces.Unsigned_8 :=
+   Map_Bytes : array (0 .. Max_Size * Max_Size - 1) of Interfaces.Unsigned_8 :=
      [others => 0];
 
    function Cell_Index (X, Y : Coord) return Natural is
    begin
-      return Integer (Y) * Grid_Size + Integer (X);
+      return Integer (Y) * Map.Active_Size + Integer (X);
    end Cell_Index;
 
    procedure Paint is
@@ -413,9 +415,9 @@ package body Island.API is
       Idx  : Natural;
    begin
       Ensure;
-      for Y in Coord loop
-         for X in Coord loop
-            Map_Bytes (Cell_Index (X, Y)) :=
+      for Y in 0 .. Map.Active_Size - 1 loop
+         for X in 0 .. Map.Active_Size - 1 loop
+            Map_Bytes (Cell_Index (Coord (X), Coord (Y))) :=
               Interfaces.Unsigned_8
                 (Terrain'Pos (Map.Terrain_At (The_State.Island_Seed, X, Y)));
          end loop;
@@ -870,6 +872,126 @@ package body Island.API is
       return Integer (Map.Rejection_Count (The_State.Island_Seed));
    end Rejections;
 
+   function Reason_Count return Integer is
+   begin
+      Ensure;
+      return Integer (Map.Reason_Count (The_State.Island_Seed));
+   end Reason_Count;
+
+   function Reason_Code (Index : Integer) return Integer is
+   begin
+      Ensure;
+      if Index < 1 then
+         return 0;
+      end if;
+      return Integer (Map.Reason_Code (The_State.Island_Seed, Natural (Index)));
+   end Reason_Code;
+
+   function Region_Count return Integer is
+   begin
+      Ensure;
+      return Integer (Map.Region_Count (The_State.Island_Seed));
+   end Region_Count;
+
+   function Region_Kind (Index : Integer) return Integer is
+   begin
+      Ensure;
+      if Index < 1 then
+         return 0;
+      end if;
+      return Integer (Map.Region_Kind (The_State.Island_Seed, Natural (Index)));
+   end Region_Kind;
+
+   function Region_A (Index : Integer) return Integer is
+   begin
+      Ensure;
+      if Index < 1 then
+         return 0;
+      end if;
+      return Integer (Map.Region_A (The_State.Island_Seed, Natural (Index)));
+   end Region_A;
+
+   function Region_B (Index : Integer) return Integer is
+   begin
+      Ensure;
+      if Index < 1 then
+         return 0;
+      end if;
+      return Integer (Map.Region_B (The_State.Island_Seed, Natural (Index)));
+   end Region_B;
+
+   function Biome_At (X, Y : Integer) return Integer is
+   begin
+      Ensure;
+      if X not in Coord or else Y not in Coord then
+         return -1;
+      end if;
+      return Integer (Map.Biome (The_State.Island_Seed, X, Y));
+   end Biome_At;
+
+   function Group_Title (G : Integer) return Integer is
+   begin
+      Ensure;
+      if G not in World.Group_Id then
+         return 0;
+      end if;
+      return Integer (World.Title_Of (World.Group_Population (The_State, G)));
+   end Group_Title;
+
+   function Group_Diplomacy (A, B : Integer) return Integer is
+   begin
+      Ensure;
+      if A not in World.Group_Id or else B not in World.Group_Id then
+         return 0;
+      end if;
+      return Integer (World.Diplomacy (The_State, A, B));
+   end Group_Diplomacy;
+
+   function Group_Syl (G, Which : Integer) return Integer is
+   begin
+      Ensure;
+      if G not in World.Group_Id or else Which < 0 then
+         return 0;
+      end if;
+      return Integer (World.Name_Syl (The_State, G, Natural (Which)));
+   end Group_Syl;
+
+   function Trail_Span return Integer is
+   begin
+      Ensure;
+      return Integer (World.Trail_Span (The_State));
+   end Trail_Span;
+
+   function Trail_Peak return Integer is
+   begin
+      Ensure;
+      return Integer (World.Trail_Peak (The_State));
+   end Trail_Peak;
+
+   function Clamp_Code (Value, Max : Integer) return Natural is
+   begin
+      if Value < 0 then
+         return 0;
+      elsif Value > Max then
+         return Natural (Max);
+      else
+         return Natural (Value);
+      end if;
+   end Clamp_Code;
+
+   procedure Reset_Settings
+     (Island_Seed, Pop_Seed, Size_Code, Pole_Code, Preset_Code : Integer)
+   is
+   begin
+      World.Reset
+        (The_State, To_Seed (Island_Seed), To_Seed (Pop_Seed),
+         Clamp_Code (Size_Code, 4), Clamp_Code (Pole_Code, 3),
+         Clamp_Code (Preset_Code, 2));
+      Ready := True;
+      N_Samples := 0;
+      Note;
+   end Reset_Settings;
+
    function Home_Store (H, Kind : Integer) return Integer is
    begin
       Ensure;
@@ -944,12 +1066,12 @@ package body Island.API is
       pragma Assert (Agent_Y = Integer (Map.Start_Y));
       pragma Assert (Facing = 0);
       pragma Assert (Hand = 0);
-      pragma Assert (Width = Grid_Size);
-      pragma Assert (Height = Grid_Size);
+      pragma Assert (Width = Map.Active_Size);
+      pragma Assert (Height = Map.Active_Size);
       pragma Assert (Cell (-1, 0) = -1);
-      pragma Assert (Cell (0, Grid_Size) = -1);
-      for Y in Coord loop
-         for X in Coord loop
+      pragma Assert (Cell (0, Map.Active_Size) = -1);
+      for Y in 0 .. Map.Active_Size - 1 loop
+         for X in 0 .. Map.Active_Size - 1 loop
             pragma Assert
               (Cell (X, Y) = Terrain'Pos
                  (Map.Terrain_At (Map.Default_Island_Seed, X, Y)));

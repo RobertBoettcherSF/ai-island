@@ -77,15 +77,33 @@ package Island.Map is
 
    function Layout_Ok return Boolean;
 
-   --  Height is 0 on open water and rises away from the lake.
-   --  Southern hills are higher, which is where the stones sit.
+   --  Height is 0 on the sea, the lake, and a river mouth. It is generated
+   --  from the island seed: a fractal field, a few ridgelines, then rivers
+   --  that only step downhill.
    function Height (Seed : Seed_Value; X, Y : Coord) return Natural;
 
    function Mountain (Seed : Seed_Value; X, Y : Coord) return Boolean;
 
+   --  A pass is a dip in a ridge: high ground with higher ground on two
+   --  opposite sides. Crossing a pass is cheaper than climbing.
+   function Pass (Seed : Seed_Value; X, Y : Coord) return Boolean;
+
+   --  True when the step rises by 2 or more and the destination is not a pass.
+   function Uphill
+     (Seed : Seed_Value; X, Y, NX, NY : Coord) return Boolean;
+
+   --  Rain is higher on the windward side. The wind comes from the west.
+   function Rain (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   --  Low, wet ground beside a river mouth. Berries prefer it.
+   function Fertile (Seed : Seed_Value; X, Y : Coord) return Boolean;
+
+   --  How many derived seeds were skipped before this map was accepted.
+   function Rejection_Count (Seed : Seed_Value) return Natural;
+
    River_Count : constant := 4;
    subtype River_Index is Integer range 1 .. River_Count;
-   River_Max : constant := 40;
+   River_Max : constant := 120;
 
    function River_Length (Seed : Seed_Value; Which : River_Index) return Natural;
 

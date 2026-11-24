@@ -65,13 +65,13 @@ Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `o
 
 ## The island
 
-The grid is 96 by 96, drawn from a fixed seed. `x` increases east and `y` increases south. Both run from 0 to 95. You start at 48,48 facing north, on grass, with an empty hand. The shore is beach, the west is forest, and there is a lake. Berry groves are spread out, so creatures have to move to feed.
+The grid is 96 by 96. `x` increases east and `y` increases south. Both run from 0 to 95. You start at 48,48 facing north, on grass, with an empty hand. The island seed builds the ground: a coarse elevation, rainfall, and drainage, filled in with an integer midpoint pass, then one to three ridgelines. The edges stay low, so the coast is sea. Rivers start on the mountain flanks and step to a lower neighbour, carving a channel or leaving a pond where they would otherwise stop. They run downhill to the lake or the sea, and a river on flat ground splits into a small delta. The wind comes from the west, so the windward side is wet and the lee side is dry. Forest, grass, and berries follow elevation, rain, and distance to water. If a map has no range, a river that never reaches water, or too little flat ground beside water for four groups, that derived seed is rejected and the next one is tried. The rejection count is in the run file and the F9 report.
 
 Water, rock, and trees block movement. Sand and grass do not. A step off the beach is water, so you stay put.
 
 The stone starts at 47,48. A stick is at 49,48. A shell is at 48,50. Nothing is random.
 
-The island seed raises a few hills. Four rivers start in the hills and flow downhill to the lake. Mountains are slow to cross, and stones sit on the hills. A creature must drink as well as eat, so the starting homes stand beside a river.
+Uphill steps cost more and downhill steps cost less. A pass is cheaper than a climb. The map is shaded by height, and **Height** (behind **Debug**) draws the elevation. The info box shows the height of the tile you click. Stones still sit in the hills. A creature must drink as well as eat, so the starting homes stand beside a river. A scout follows a river down to its mouth and walks back, leaving a trail. A market opens only where two groups' trails cross, at least 10 tiles from any home.
 
 Twelve other creatures start with you, three in each group, beside those homes. You are in group 1. Speed, sight, metabolism, and fertility each come from two alleles. A child inherits one allele from each parent, and the visible trait is their average. A colour allele is dominant. Low metabolism saves food and also slows the creature, so it is not free. A scout with wide sight follows the river downstream and can meet another group. A meeting can trade, and trust lets a creature migrate or a pair from two groups have a child. On the way home a traveller leaves a scent. The scent fades, and another pass strengthens it. Creatures prefer a marked tile, so a path appears. A strong trail can be paved with sticks and stones into a road, which is faster and wears out if nobody uses it. Where two strong trails cross, a market opens. Surplus sticks, stones, and food change hands there, and a busy market draws a new hut. `gather`, `build`, `feed`, and `trade` are the player's extra commands. `world` lists the groups and the homes.
 
@@ -131,7 +131,9 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a short smoke. One river reaches water downhill, one trail forms, and one market trade happens. The same checks cover berries, fish, a birth, a feeding, a full home, a meeting trade, a migration, a cross-group birth, a 1:2:1 colour cross, one starvation, and 2000 turns twice with the same seeds. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a short smoke. Every river steps downhill and ends in water, the same seed rebuilds the same map, and the default seeds produce a meeting and a trade within 3000 turns. Ten thousand draws from the SplitMix32 generator fall evenly across ten buckets, and a second stream with the same seed matches. The same checks cover berries, fish, a birth, a feeding, a full home, a meeting trade, a migration, a cross-group birth, a 1:2:1 colour cross, one starvation, and 2000 turns twice with the same seeds. `ldd bin/island` must not mention `libgnat`.
+
+Numbers in the rules come from `Island.Rng`. Terrain uses the island seed. Folk use a stream started from the population seed. Nothing reads the clock.
 
 In 0.3.1 the population sat at 35 because the world had 36 creature slots and the player's slot was never given to anyone else. Births now wait for room in a home.
 

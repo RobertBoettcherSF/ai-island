@@ -249,4 +249,10 @@ package Island.API is
    function Thirst return Integer
      with Export, Convention => C, External_Name => "island_thirst";
 
+   function Tile_Height (X, Y : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_tile_height";
+
+   function Rejections return Integer
+     with Export, Convention => C, External_Name => "island_rejections";
+
 end Island.API;

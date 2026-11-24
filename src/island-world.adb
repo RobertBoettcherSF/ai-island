@@ -1,6 +1,8 @@
+with Interfaces;
 with Island.Folk;
 
 package body Island.World is
+   use type Interfaces.Unsigned_32;
 
    function Valid (S : State) return Boolean is
       Held : Natural := 0;
@@ -522,7 +524,7 @@ package body Island.World is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 7");
+      Put_Text (Buf, Pos, "ai-island 8");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -756,6 +758,10 @@ package body Island.World is
          Put_Nat (Buf, Pos, Natural (S.Trails (I).Y));
          Put_Char (Buf, Pos, ' ');
          Put_Nat (Buf, Pos, S.Trails (I).Strength);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Trails (I).Group));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Trails (I).Other);
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       for I in Road_Id loop
@@ -791,6 +797,10 @@ package body Island.World is
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       Put_Nat (Buf, Pos, S.Meetings);
+      Put_Char (Buf, Pos, ASCII.LF);
+      Put_Nat (Buf, Pos, Natural (S.Folk_Rng.Word / 65536));
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, Natural (S.Folk_Rng.Word mod 65536));
       Put_Char (Buf, Pos, ASCII.LF);
       Len := Pos - 1;
    end Write_Save;
@@ -965,7 +975,7 @@ package body Island.World is
             end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 7" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 8" then
          Good := False;
       end if;
       if Good then
@@ -1383,7 +1393,7 @@ package body Island.World is
                         end loop;
                      end loop;
                      declare
-                        Used_P, Xn4, Yn4, Extra, Stones_N, Trade_N, Meet_N : Natural;
+                        Used_P, Xn4, Yn4, Extra, Stones_N, Trade_N, Meet_N, Group_N, Other_N : Natural;
                      begin
                         for I in Trail_Id loop
                            Next_Line (Buf, From, Hb, Lb, Good);
@@ -1395,11 +1405,17 @@ package body Island.World is
                            Take_Nat (Buf, Pos, Lb, Yn4, Coord'Last, Good);
                            Expect (Buf, Pos, Lb, ' ', Good);
                            Take_Nat (Buf, Pos, Lb, Extra, 40, Good);
-                           if Good and then Pos = Lb + 1 then
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Group_N, 4, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Other_N, 4, Good);
+                           if Good and then Pos = Lb + 1 and then Group_N in Group_Id then
                               Local.Trails (I).Used := Used_P = 1;
                               Local.Trails (I).X := Coord (Xn4);
                               Local.Trails (I).Y := Coord (Yn4);
                               Local.Trails (I).Strength := Extra;
+                              Local.Trails (I).Group := Group_N;
+                              Local.Trails (I).Other := Other_N;
                            else
                               Good := False;
                            end if;
@@ -1456,6 +1472,22 @@ package body Island.World is
                         else
                            Good := False;
                         end if;
+                        declare
+                           Hi, Lo : Natural;
+                        begin
+                           Next_Line (Buf, From, Hb, Lb, Good);
+                           Pos := Hb;
+                           Take_Nat (Buf, Pos, Lb, Hi, 65535, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Lo, 65535, Good);
+                           if Good and then Pos = Lb + 1 then
+                              Local.Folk_Rng.Word :=
+                                Interfaces.Unsigned_32 (Hi) * 65536
+                                + Interfaces.Unsigned_32 (Lo);
+                           else
+                              Good := False;
+                           end if;
+                        end;
                      end;
                   end;
                end;

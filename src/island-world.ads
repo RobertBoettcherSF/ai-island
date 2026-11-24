@@ -25,6 +25,12 @@ package Island.World is
    Max_Notes : constant := 12;
    subtype Note_Id is Integer range 1 .. Max_Notes;
    Trust_Max : constant := 12;
+   Max_Trails : constant := 48;
+   subtype Trail_Id is Integer range 1 .. Max_Trails;
+   Max_Roads : constant := 16;
+   subtype Road_Id is Integer range 1 .. Max_Roads;
+   Max_Markets : constant := 4;
+   subtype Market_Id is Integer range 1 .. Max_Markets;
 
    subtype Speed_T is Integer range 1 .. 3;
    subtype Sight_T is Integer range 2 .. 4;
@@ -61,6 +67,7 @@ package Island.World is
       Fe_B       : Natural := 2;
       Col_A      : Natural := 0;
       Col_B      : Natural := 0;
+      Thirst     : Natural := 0;
    end record;
 
    type Folk_Array is array (Folk_Id) of Folk_Rec;
@@ -135,6 +142,37 @@ package Island.World is
    type Trust_Row is array (Group_Id) of Natural;
    type Trust_Table is array (Group_Id) of Trust_Row;
 
+   type Trail_Rec is record
+      Used     : Boolean := False;
+      X        : Coord := 0;
+      Y        : Coord := 0;
+      Strength : Natural := 0;
+   end record;
+
+   type Trail_Array is array (Trail_Id) of Trail_Rec;
+
+   type Road_Rec is record
+      Used : Boolean := False;
+      X    : Coord := 0;
+      Y    : Coord := 0;
+      Life : Natural := 0;
+   end record;
+
+   type Road_Array is array (Road_Id) of Road_Rec;
+
+   type Market_Rec is record
+      Used    : Boolean := False;
+      X       : Coord := 0;
+      Y       : Coord := 0;
+      Berries : Natural := 0;
+      Fish    : Natural := 0;
+      Sticks  : Natural := 0;
+      Stones  : Natural := 0;
+      Trades  : Natural := 0;
+   end record;
+
+   type Market_Array is array (Market_Id) of Market_Rec;
+
    type Group_Array is array (Group_Id) of Group_Rec;
 
    type State is record
@@ -158,6 +196,10 @@ package Island.World is
       Groups      : Group_Array;
       Trust       : Trust_Table := [others => [others => 2]];
       Notes       : Note_Book;
+      Trails      : Trail_Array;
+      Roads       : Road_Array;
+      Markets     : Market_Array;
+      Meetings    : Natural := 0;
    end record;
 
    function Standable (S : State; X, Y : Coord) return Boolean;

@@ -522,7 +522,7 @@ package body Island.World is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 6");
+      Put_Text (Buf, Pos, "ai-island 7");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -651,6 +651,8 @@ package body Island.World is
          Put_Nat (Buf, Pos, S.Folk (I).Col_A);
          Put_Char (Buf, Pos, ' ');
          Put_Nat (Buf, Pos, S.Folk (I).Col_B);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Thirst);
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       for I in Home_Id loop
@@ -742,6 +744,54 @@ package body Island.World is
             Put_Char (Buf, Pos, ASCII.LF);
          end loop;
       end loop;
+      for I in Trail_Id loop
+         if S.Trails (I).Used then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Trails (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Trails (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Trails (I).Strength);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for I in Road_Id loop
+         if S.Roads (I).Used then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Roads (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Roads (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Roads (I).Life);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for I in Market_Id loop
+         if S.Markets (I).Used then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Markets (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Markets (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Markets (I).Sticks);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Markets (I).Stones);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Markets (I).Trades);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      Put_Nat (Buf, Pos, S.Meetings);
+      Put_Char (Buf, Pos, ASCII.LF);
       Len := Pos - 1;
    end Write_Save;
 
@@ -915,7 +965,7 @@ package body Island.World is
             end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 6" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 7" then
          Good := False;
       end if;
       if Good then
@@ -1115,6 +1165,15 @@ package body Island.World is
                      Take_Nat (Buf, Pos, La, CA, 1, Good);
                      Expect (Buf, Pos, La, ' ', Good);
                      Take_Nat (Buf, Pos, La, CB, 1, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     declare
+                        Thirst_N : Natural;
+                     begin
+                        Take_Nat (Buf, Pos, La, Thirst_N, 100, Good);
+                        if Good then
+                           Local.Folk (I).Thirst := Thirst_N;
+                        end if;
+                     end;
                      if Good and then Pos /= La + 1 then
                         Good := False;
                      end if;
@@ -1323,6 +1382,81 @@ package body Island.World is
                            end if;
                         end loop;
                      end loop;
+                     declare
+                        Used_P, Xn4, Yn4, Extra, Stones_N, Trade_N, Meet_N : Natural;
+                     begin
+                        for I in Trail_Id loop
+                           Next_Line (Buf, From, Hb, Lb, Good);
+                           Pos := Hb;
+                           Take_Nat (Buf, Pos, Lb, Used_P, 1, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Xn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Yn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Extra, 40, Good);
+                           if Good and then Pos = Lb + 1 then
+                              Local.Trails (I).Used := Used_P = 1;
+                              Local.Trails (I).X := Coord (Xn4);
+                              Local.Trails (I).Y := Coord (Yn4);
+                              Local.Trails (I).Strength := Extra;
+                           else
+                              Good := False;
+                           end if;
+                        end loop;
+                        for I in Road_Id loop
+                           Next_Line (Buf, From, Hb, Lb, Good);
+                           Pos := Hb;
+                           Take_Nat (Buf, Pos, Lb, Used_P, 1, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Xn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Yn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Extra, 80, Good);
+                           if Good and then Pos = Lb + 1 then
+                              Local.Roads (I).Used := Used_P = 1;
+                              Local.Roads (I).X := Coord (Xn4);
+                              Local.Roads (I).Y := Coord (Yn4);
+                              Local.Roads (I).Life := Extra;
+                           else
+                              Good := False;
+                           end if;
+                        end loop;
+                        for I in Market_Id loop
+                           Next_Line (Buf, From, Hb, Lb, Good);
+                           Pos := Hb;
+                           Take_Nat (Buf, Pos, Lb, Used_P, 1, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Xn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Yn4, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Extra, 100, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Stones_N, 100, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Trade_N, 1_000_000, Good);
+                           if Good and then Pos = Lb + 1 then
+                              Local.Markets (I).Used := Used_P = 1;
+                              Local.Markets (I).X := Coord (Xn4);
+                              Local.Markets (I).Y := Coord (Yn4);
+                              Local.Markets (I).Sticks := Extra;
+                              Local.Markets (I).Stones := Stones_N;
+                              Local.Markets (I).Trades := Trade_N;
+                           else
+                              Good := False;
+                           end if;
+                        end loop;
+                        Next_Line (Buf, From, Hb, Lb, Good);
+                        Pos := Hb;
+                        Take_Nat (Buf, Pos, Lb, Meet_N, 1_000_000, Good);
+                        if Good and then Pos = Lb + 1 then
+                           Local.Meetings := Meet_N;
+                        else
+                           Good := False;
+                        end if;
+                     end;
                   end;
                end;
             end if;

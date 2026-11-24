@@ -97,6 +97,21 @@ mkdir -p obj/wasm docs
     --export=island_group_out \
     --export=island_group_allele \
     --export=island_home_store \
+    --export=island_river_len \
+    --export=island_river_x \
+    --export=island_river_y \
+    --export=island_trail_count \
+    --export=island_trail_x \
+    --export=island_trail_y \
+    --export=island_road_count \
+    --export=island_road_x \
+    --export=island_road_y \
+    --export=island_market_count \
+    --export=island_market_x \
+    --export=island_market_y \
+    --export=island_market_trades \
+    --export=island_meetings \
+    --export=island_thirst \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \

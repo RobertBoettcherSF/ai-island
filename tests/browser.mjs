@@ -2,6 +2,7 @@
 // width and at 320px. Needs the system Chrome and puppeteer-core on NODE_PATH.
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {createRequire} from "node:module";
@@ -38,13 +39,13 @@ function serve() {
   });
 }
 
-async function check(page, label) {
+async function check(page, label, query) {
   const errors = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
   page.on("pageerror", (err) => errors.push(String(err)));
-  await page.goto("http://127.0.0.1:" + port + "/", {waitUntil: "networkidle0"});
+  await page.goto("http://127.0.0.1:" + port + "/" + (query || ""), {waitUntil: "networkidle0"});
   const shown = await page.$eval("#stamp", (el) => el.textContent.trim());
   if (shown !== stamp) throw new Error(label + " stamp " + shown + " != " + stamp);
   const reply = await page.$eval("#reply", (el) => el.textContent);
@@ -57,27 +58,78 @@ async function check(page, label) {
   if (!(corner[2] > corner[0] && corner[2] > corner[1])) {
     throw new Error(label + " corner pixel is not water " + corner.join(","));
   }
+  const seeds = await page.evaluate(() => ({
+    island: document.getElementById("islandSeed").value,
+    pop: document.getElementById("popSeed").value
+  }));
+  if (query && query.includes("island=42") && (seeds.island !== "42" || seeds.pop !== "7")) {
+    throw new Error(label + " seeds " + seeds.island + " " + seeds.pop);
+  }
+  if (!query && seeds.island !== "539365668") {
+    throw new Error(label + " default island seed " + seeds.island);
+  }
+  await page.click("#speed10");
+  const pressed = await page.$eval("#speed10", (el) => el.getAttribute("aria-pressed"));
+  if (pressed !== "true") throw new Error(label + " speed button");
+  const downloadDir = fs.mkdtempSync(path.join(os.tmpdir(), "island-run-"));
+  const client = await page.createCDPSession();
+  await client.send("Page.setDownloadBehavior", {behavior: "allow", downloadPath: downloadDir});
   await page.click("#auto");
+  await page.waitForFunction(() => document.getElementById("auto").textContent === "Stop", {timeout: 10000});
+  await page.click("#speed100");
   await page.waitForFunction(() => {
-    const t = document.getElementById("autoResult").textContent;
-    return t.startsWith("Auto: pass") || t.startsWith("Auto: fail");
-  }, {timeout: 40000});
-  const result = await page.$eval("#autoResult", (el) => el.textContent);
-  if (!result.startsWith("Auto: pass")) throw new Error(label + " " + result);
-  const report = await page.evaluate(() => window.aiIslandReport());
-  if (report.auto !== "pass") throw new Error(label + " report auto " + report.auto);
-  if (report.version !== stamp) throw new Error(label + " report version");
-  if (!report.browser) throw new Error(label + " report has no browser");
-  if (!Array.isArray(report.commands) || report.commands.length < 1) {
-    throw new Error(label + " report commands");
+    const text = document.getElementById("hungerLine").textContent;
+    const match = text.match(/turn (\d+)/);
+    return match && Number(match[1]) >= 100;
+  }, {timeout: 20000});
+  const running = await page.evaluate(() => window.aiIslandReport());
+  if (running.auto !== "running") throw new Error(label + " F9 while running " + running.auto);
+  if (typeof running.island !== "number" || typeof running.pop !== "number") {
+    throw new Error(label + " F9 seeds");
   }
-  if (!(report.population > 0)) throw new Error(label + " population " + report.population);
-  if (typeof report.births !== "number" || typeof report.deaths !== "number") {
-    throw new Error(label + " missing births or deaths");
+  await page.click("#auto");
+  await page.waitForFunction(() => document.getElementById("auto").textContent === "Auto", {timeout: 10000});
+  const file = await waitForRun(downloadDir);
+  const run = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (run.version !== stamp) throw new Error(label + " run version " + run.version);
+  if (!run.commit) throw new Error(label + " run commit");
+  if (!(run.totalTurns >= 100)) throw new Error(label + " totalTurns " + run.totalTurns);
+  for (const key of ["population", "births", "deaths", "island", "pop"]) {
+    if (typeof run[key] !== "number") throw new Error(label + " missing " + key);
   }
-  if (!(report.per100Ms > 0)) throw new Error(label + " missing 100x timing");
-  console.log(label + " " + result);
+  for (const side of ["start", "end"]) {
+    for (const trait of ["speed", "sight", "metabolism", "fertility"]) {
+      if (typeof run[side][trait] !== "number") throw new Error(label + " " + side + " " + trait);
+    }
+  }
+  if (!Array.isArray(run.history) || run.history.length < 1 || run.history[0].turn !== 100) {
+    throw new Error(label + " history");
+  }
+  if (typeof run.history[0].population !== "number" || typeof run.history[0].speed !== "number") {
+    throw new Error(label + " history traits");
+  }
+  if (!Array.isArray(run.commands) || run.commands.length < 1) throw new Error(label + " commands");
+  console.log(label + " stopped after " + run.totalTurns + " turns, population " + run.population);
   if (errors.length) throw new Error(label + " console " + errors.join(" | "));
+}
+
+function waitForRun(dir) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = () => {
+      const names = fs.readdirSync(dir).filter((name) => name.endsWith(".json"));
+      if (names.length) {
+        resolve(path.join(dir, names[0]));
+        return;
+      }
+      if (Date.now() - started > 10000) {
+        reject(new Error("no ai-island-run.json in " + dir));
+        return;
+      }
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
 }
 
 const server = await serve();
@@ -91,10 +143,10 @@ try {
   const page = await browser.newPage();
   await page.setViewport({width: 320, height: 700});
   await page.emulateMediaFeatures([{name: "prefers-reduced-motion", value: "reduce"}]);
-  await check(page, "320 reduced-motion");
+  await check(page, "320 reduced-motion", "");
   await page.setViewport({width: 390, height: 844});
   await page.emulateMediaFeatures([{name: "prefers-reduced-motion", value: "no-preference"}]);
-  await check(page, "390 motion");
+  await check(page, "390 motion", "?island=42&pop=7");
 } finally {
   await browser.close();
   server.close();

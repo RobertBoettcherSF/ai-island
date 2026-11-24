@@ -1,6 +1,7 @@
 with Ada.Command_Line;
 with Ada.Exceptions;
 with Ada.Text_IO;
+with Island.Map;
 with Island.Text;
 with Island.World;
 with Island_Save;
@@ -13,6 +14,8 @@ procedure Island_CLI is
 
    As_Text  : Boolean := False;
    Have_Save : Boolean := False;
+   Island_Seed : Island.Map.Seed_Value := Island.Map.Default_Island_Seed;
+   Pop_Seed    : Island.Map.Seed_Value := Island.Map.Default_Pop_Seed;
    Save_Path : String (1 .. 512) := [others => ' '];
    Save_Len  : Natural := 0;
    Cmd       : String (1 .. Island.Command_Max) := [others => ' '];
@@ -45,6 +48,28 @@ procedure Island_CLI is
         and then (Command (First + 1) = 'e' or else Command (First + 1) = 'E')
         and then (Command (First + 2) = 'w' or else Command (First + 2) = 'W');
    end Is_New;
+
+   function Take_Seed (Word : String; Value : out Island.Map.Seed_Value) return Boolean is
+      V : Natural := 0;
+      D : Natural;
+   begin
+      Value := Island.Map.Default_Island_Seed;
+      if Word'Length = 0 then
+         return False;
+      end if;
+      for C of Word loop
+         if C not in '0' .. '9' then
+            return False;
+         end if;
+         D := Character'Pos (C) - Character'Pos ('0');
+         if V > (2_147_483_647 - D) / 10 then
+            return False;
+         end if;
+         V := V * 10 + D;
+      end loop;
+      Value := V;
+      return True;
+   end Take_Seed;
 
    procedure Add_Word (Word : String) is
    begin
@@ -80,9 +105,7 @@ begin
          declare
             Arg : constant String := Argument (I);
          begin
-            if Cmd_Len > 0 then
-               Add_Word (Arg);
-            elsif Arg = "--text" then
+            if Arg = "--text" then
                As_Text := True;
             elsif Arg = "--save" then
                if I = Argument_Count then
@@ -113,6 +136,23 @@ begin
                      Have_Save := True;
                   end if;
                end;
+            elsif Arg = "--island" or else Arg = "--pop" then
+               if I = Argument_Count then
+                  Usage := True;
+               else
+                  I := I + 1;
+                  declare
+                     Number : Island.Map.Seed_Value;
+                  begin
+                     if not Take_Seed (Argument (I), Number) then
+                        Usage := True;
+                     elsif Arg = "--island" then
+                        Island_Seed := Number;
+                     else
+                        Pop_Seed := Number;
+                     end if;
+                  end;
+               end if;
             elsif Arg'Length > 0 and then Arg (Arg'First) = '-' then
                Usage := True;
             else
@@ -142,7 +182,7 @@ begin
    end if;
 
    if Is_New (Cmd (1 .. Cmd_Len)) then
-      Island.World.Reset (S);
+      Island.World.Reset (S, Island_Seed, Pop_Seed);
       Island.Text.Execute (S, Cmd (1 .. Cmd_Len), As_Text, Reply, Len, Ok);
       if Ok then
          Island_Save.Store (Save_Path (1 .. Save_Len), S, Stored);

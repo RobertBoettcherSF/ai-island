@@ -5,7 +5,7 @@ package body Island.World is
    function Valid (S : State) return Boolean is
       Held : Natural := 0;
    begin
-      if not Map.Walkable (Map.Terrain_At (S.X, S.Y)) then
+      if not Map.Walkable (Map.Terrain_At (S.Island_Seed, S.X, S.Y)) then
          return False;
       end if;
       for I in S.Objects'Range loop
@@ -46,7 +46,9 @@ package body Island.World is
       end loop;
       for I in Folk_Id loop
          if S.Folk (I).Alive then
-            if not Map.Walkable (Map.Terrain_At (S.Folk (I).X, S.Folk (I).Y)) then
+            if not Map.Walkable
+              (Map.Terrain_At (S.Island_Seed, S.Folk (I).X, S.Folk (I).Y))
+            then
                return False;
             end if;
             if not Stomach.Levels_Ok (S.Folk (I).Belly) then
@@ -57,8 +59,14 @@ package body Island.World is
       return True;
    end Valid;
 
-   procedure Reset (S : out State) is
+   procedure Reset
+     (S           : out State;
+      Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
+      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed)
+   is
    begin
+      S.Island_Seed := Island_Seed;
+      S.Pop_Seed := Pop_Seed;
       S.X := Map.Start_X;
       S.Y := Map.Start_Y;
       S.Facing := North;
@@ -101,7 +109,7 @@ package body Island.World is
          Result := Off_Map;
          return;
       end if;
-      By := Map.Terrain_At (Coord (NX), Coord (NY));
+      By := Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY));
       if not Map.Walkable (By) then
          Result := Blocked;
          return;
@@ -206,13 +214,13 @@ package body Island.World is
       V    : Natural := N;
       L    : Natural := 0;
    begin
-      pragma Assert (N <= 9999);
       if V = 0 then
          Put_Char (Buf, Pos, '0');
          return;
       end if;
       while V > 0 loop
          L := L + 1;
+         pragma Assert (L <= Digs'Last);
          Digs (L) := Character'Val (Character'Pos ('0') + V mod 10);
          V := V / 10;
       end loop;
@@ -259,7 +267,9 @@ package body Island.World is
    function Food_At (S : State; X, Y : Coord) return Food is
    begin
       for I in Map.Bush_Index loop
-         if Map.Bush (I).X = X and then Map.Bush (I).Y = Y then
+         if Map.Bush (S.Island_Seed, I).X = X
+           and then Map.Bush (S.Island_Seed, I).Y = Y
+         then
             if Ripe (S.Bush_Eaten (I), S.Turn) then
                return Berries;
             else
@@ -268,7 +278,9 @@ package body Island.World is
          end if;
       end loop;
       for I in Map.Fish_Index loop
-         if Map.Fish_At (I).X = X and then Map.Fish_At (I).Y = Y then
+         if Map.Fish_At (S.Island_Seed, I).X = X
+           and then Map.Fish_At (S.Island_Seed, I).Y = Y
+         then
             return Fish;
          end if;
       end loop;
@@ -324,7 +336,9 @@ package body Island.World is
    procedure Mark_Bush (S : in out State; X, Y : Coord) is
    begin
       for I in Map.Bush_Index loop
-         if Map.Bush (I).X = X and then Map.Bush (I).Y = Y then
+         if Map.Bush (S.Island_Seed, I).X = X
+           and then Map.Bush (S.Island_Seed, I).Y = Y
+         then
             S.Bush_Eaten (I) := S.Turn;
             return;
          end if;
@@ -416,7 +430,7 @@ package body Island.World is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 3");
+      Put_Text (Buf, Pos, "ai-island 4");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -466,6 +480,10 @@ package body Island.World is
       Put_Nat (Buf, Pos, S.Births);
       Put_Char (Buf, Pos, ' ');
       Put_Nat (Buf, Pos, S.Deaths);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Island_Seed);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Pop_Seed);
       Put_Char (Buf, Pos, ASCII.LF);
       for I in Folk_Id loop
          if S.Folk (I).Alive then
@@ -658,15 +676,25 @@ package body Island.World is
             Take_Nat (Buf, Pos, Lb, Turn_N, 1_000_000, Good);
             Expect (Buf, Pos, Lb, ' ', Good);
             Take_Nat (Buf, Pos, Lb, Full_N, 1_000_000, Good);
-            if Good and then Pos = Lb + 1 then
-               Local.Births := Turn_N;
-               Local.Deaths := Full_N;
-            else
-               Good := False;
-            end if;
+            Expect (Buf, Pos, Lb, ' ', Good);
+            declare
+               Island_N, Pop_N : Natural;
+            begin
+               Take_Nat (Buf, Pos, Lb, Island_N, 2_147_483_647, Good);
+               Expect (Buf, Pos, Lb, ' ', Good);
+               Take_Nat (Buf, Pos, Lb, Pop_N, 2_147_483_647, Good);
+               if Good and then Pos = Lb + 1 then
+                  Local.Births := Turn_N;
+                  Local.Deaths := Full_N;
+                  Local.Island_Seed := Island_N;
+                  Local.Pop_Seed := Pop_N;
+               else
+                  Good := False;
+               end if;
+            end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 3" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 4" then
          Good := False;
       end if;
       if Good then

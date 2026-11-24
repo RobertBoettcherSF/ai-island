@@ -5,11 +5,11 @@ with Island.Stomach;
 package body Island.Folk is
    use type Stomach.Hunger;
 
-   function Mix (A, B, C : Natural) return Natural is
+   function Mix (Seed : Map.Seed_Value; A, B, C : Natural) return Natural is
       use Interfaces;
       H : Unsigned_32 :=
         Unsigned_32 (A) * 17 + Unsigned_32 (B) * 131 + Unsigned_32 (C) * 977
-        + Map.Seed;
+        + Unsigned_32 (Seed);
    begin
       H := H xor Shift_Right (H, 8);
       return Natural (H mod 97);
@@ -54,7 +54,7 @@ package body Island.Folk is
       N := 1;
       for G in Map.Npc_Index loop
          N := N + 1;
-         Home := Map.Npc_Home (G);
+         Home := Map.Npc_Home (S.Island_Seed, G);
          S.Folk (N).Alive := True;
          S.Folk (N).X := Home.X;
          S.Folk (N).Y := Home.Y;
@@ -62,14 +62,14 @@ package body Island.Folk is
          S.Folk (N).Belly :=
            (Full => 100, Empty_For => 0, Collapsed => False);
          S.Folk (N).Age := 50;
-         S.Folk (N).Speed := 1 + Mix (N, 1, 0) mod 3;
+         S.Folk (N).Speed := 1 + Mix (S.Pop_Seed, N, 1, 0) mod 3;
          if S.Folk (N).Speed = 1 then
             S.Folk (N).Metabolism := 1;
          else
             S.Folk (N).Metabolism := 2;
          end if;
-         S.Folk (N).Sight := 2 + Mix (N, 2, 0) mod 3;
-         S.Folk (N).Fertility := 1 + Mix (N, 3, 0) mod 3;
+         S.Folk (N).Sight := 2 + Mix (S.Pop_Seed, N, 2, 0) mod 3;
+         S.Folk (N).Fertility := 1 + Mix (S.Pop_Seed, N, 3, 0) mod 3;
          S.Folk (N).Cool := 0;
       end loop;
    end Setup;
@@ -145,7 +145,8 @@ package body Island.Folk is
                NX := NX - 1;
          end case;
          if NX in Coord and then NY in Coord
-           and then Map.Walkable (Map.Terrain_At (Coord (NX), Coord (NY)))
+           and then Map.Walkable
+             (Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY)))
            and then not Occupied (S, Coord (NX), Coord (NY), Who)
          then
             S.Folk (Who).X := Coord (NX);
@@ -164,7 +165,7 @@ package body Island.Folk is
          return;
       end if;
       for I in Map.Bush_Index loop
-         Spot := Map.Bush (I);
+         Spot := Map.Bush (S.Island_Seed, I);
          if Bush_Ripe (S, I)
            and then abs (Integer (Spot.X) - Integer (S.Folk (Who).X)) <= 1
            and then abs (Integer (Spot.Y) - Integer (S.Folk (Who).Y)) <= 1
@@ -238,15 +239,15 @@ package body Island.Folk is
                for B in Map.Bush_Index loop
                   if Bush_Ripe (S, B)
                     and then In_Sight
-                      (S.Folk (Who), Map.Bush (B).X, Map.Bush (B).Y)
+                      (S.Folk (Who), Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y)
                   then
                      D := Dist
                        (S.Folk (Who).X, S.Folk (Who).Y,
-                        Map.Bush (B).X, Map.Bush (B).Y);
+                        Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y);
                      if D < Best then
                         Best := D;
-                        Best_X := Map.Bush (B).X;
-                        Best_Y := Map.Bush (B).Y;
+                        Best_X := Map.Bush (S.Island_Seed, B).X;
+                        Best_Y := Map.Bush (S.Island_Seed, B).Y;
                         Found := True;
                      end if;
                   end if;
@@ -277,18 +278,18 @@ package body Island.Folk is
             if not Found then
                for B in Map.Bush_Index loop
                   if In_Sight
-                    (S.Folk (Who), Map.Bush (B).X, Map.Bush (B).Y)
+                    (S.Folk (Who), Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y)
                     and then
-                      (Map.Bush (B).X /= S.Folk (Who).X
-                       or else Map.Bush (B).Y /= S.Folk (Who).Y)
+                      (Map.Bush (S.Island_Seed, B).X /= S.Folk (Who).X
+                       or else Map.Bush (S.Island_Seed, B).Y /= S.Folk (Who).Y)
                   then
                      D := Dist
                        (S.Folk (Who).X, S.Folk (Who).Y,
-                        Map.Bush (B).X, Map.Bush (B).Y);
+                        Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y);
                      if D < Best then
                         Best := D;
-                        Best_X := Map.Bush (B).X;
-                        Best_Y := Map.Bush (B).Y;
+                        Best_X := Map.Bush (S.Island_Seed, B).X;
+                        Best_Y := Map.Bush (S.Island_Seed, B).Y;
                         Found := True;
                      end if;
                   end if;
@@ -336,9 +337,9 @@ package body Island.Folk is
       end if;
    end Clamp_Fert;
 
-   function Mut (Turn, A, B, Which : Natural) return Integer is
+   function Mut (S : World.State; A, B, Which : Natural) return Integer is
    begin
-      return Integer (Mix (Turn + A, B, Which) mod 3) - 1;
+      return Integer (Mix (S.Pop_Seed, S.Turn + A, B, Which) mod 3) - 1;
    end Mut;
 
    procedure Birth_One
@@ -361,7 +362,8 @@ package body Island.Folk is
                NX := NX - 1;
          end case;
          if NX in Coord and then NY in Coord
-           and then Map.Walkable (Map.Terrain_At (Coord (NX), Coord (NY)))
+           and then Map.Walkable
+             (Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY)))
            and then not Occupied (S, Coord (NX), Coord (NY), 0)
          then
             S.Folk (Slot).Alive := True;
@@ -374,10 +376,10 @@ package body Island.Folk is
               (Full => 60, Empty_For => 0, Collapsed => False);
             S.Folk (Slot).Speed := Clamp_Speed
               ((S.Folk (A).Speed + S.Folk (B).Speed) / 2
-               + Mut (S.Turn, A, B, 1));
+               + Mut (S, A, B, 1));
             S.Folk (Slot).Sight := Clamp_Sight
               ((S.Folk (A).Sight + S.Folk (B).Sight) / 2
-               + Mut (S.Turn, A, B, 2));
+               + Mut (S, A, B, 2));
             if S.Folk (Slot).Speed = 1 then
                S.Folk (Slot).Metabolism := 1;
             else
@@ -385,7 +387,7 @@ package body Island.Folk is
             end if;
             S.Folk (Slot).Fertility := Clamp_Fert
               ((S.Folk (A).Fertility + S.Folk (B).Fertility) / 2
-               + Mut (S.Turn, A, B, 3));
+               + Mut (S, A, B, 3));
             Placed := True;
             exit;
          end if;
@@ -508,13 +510,13 @@ package body Island.Folk is
       if S.Belly.Full < 45 then
          for B in Map.Bush_Index loop
             if Bush_Ripe (S, B)
-              and then In_Sight (S.Folk (Who), Map.Bush (B).X, Map.Bush (B).Y)
+              and then In_Sight (S.Folk (Who), Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y)
             then
-               D := Dist (S.X, S.Y, Map.Bush (B).X, Map.Bush (B).Y);
+               D := Dist (S.X, S.Y, Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y);
                if D < Best then
                   Best := D;
-                  Best_X := Map.Bush (B).X;
-                  Best_Y := Map.Bush (B).Y;
+                  Best_X := Map.Bush (S.Island_Seed, B).X;
+                  Best_Y := Map.Bush (S.Island_Seed, B).Y;
                   Found := True;
                end if;
             end if;

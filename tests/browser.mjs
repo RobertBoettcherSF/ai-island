@@ -61,7 +61,7 @@ async function check(page, label) {
   await page.waitForFunction(() => {
     const t = document.getElementById("autoResult").textContent;
     return t.startsWith("Auto: pass") || t.startsWith("Auto: fail");
-  }, {timeout: 20000});
+  }, {timeout: 40000});
   const result = await page.$eval("#autoResult", (el) => el.textContent);
   if (result !== "Auto: pass") throw new Error(label + " " + result);
   const report = await page.evaluate(() => window.aiIslandReport());

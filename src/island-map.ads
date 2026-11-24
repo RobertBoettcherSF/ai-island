@@ -29,6 +29,36 @@ package Island.Map is
 
    function Walkable (Ground : Terrain) return Boolean;
 
+   --  Water that touches sand. Fish live in a few of these cells.
+   function Shallow (X, Y : Coord) return Boolean;
+
+   Bush_Count : constant := 4;
+   subtype Bush_Index is Integer range 1 .. Bush_Count;
+   Fish_Count : constant := 3;
+   subtype Fish_Index is Integer range 1 .. Fish_Count;
+
+   type Spot is record
+      X : Coord;
+      Y : Coord;
+   end record;
+
+   --  Spread across the island, not only north of the start.
+   --  Bush 1 is the short smoke walk: stand at 17,15 facing east.
+   Bushes : constant array (Bush_Index) of Spot :=
+     [1 => (X => 18, Y => 15),
+      2 => (X => 12, Y => 22),
+      3 => (X => 24, Y => 12),
+      4 => (X => 14, Y => 24)];
+
+   Fish : constant array (Fish_Index) of Spot :=
+     [1 => (X => 30, Y => 17),
+      2 => (X => 1, Y => 22),
+      3 => (X => 12, Y => 30)];
+
+   Berry_Gain   : constant := 25;
+   Fish_Gain    : constant := 40;
+   Regrow_Turns : constant := 40;
+
    --  True when the fixed map still matches the walk the browser Auto button
    --  performs: north from the start, through the stone, onto the beach.
    function Layout_Ok return Boolean;

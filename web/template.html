@@ -57,6 +57,10 @@
   }
   #autoResult.pass { background: #e5f6ea; }
   #autoResult.fail { background: #fde8ea; }
+  #meter { height: 18px; border: 2px solid #1b1916; background: #fff; max-width: 512px; }
+  #meterFill { height: 100%; width: 100%; background: #2d6a3a; }
+  #meter.hungry #meterFill { background: #c47b12; }
+  #meter.weak #meterFill, #meter.collapsed #meterFill { background: #8d1d2c; }
   .swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border: 1px solid #1b1916; vertical-align: -2px; margin-right: 0.15rem; }
   ul.legend { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; font-size: 0.95rem; }
   @media (prefers-reduced-motion: reduce) {
@@ -71,6 +75,10 @@
   <p id="banner" hidden>This page is not the latest build. Reload it.</p>
   <p id="crash" hidden>The last visit did not close cleanly. Debug can save a report of it.</p>
   <p id="where" aria-live="polite"></p>
+  <div id="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Fullness">
+    <div id="meterFill"></div>
+  </div>
+  <p id="hungerLine">Fullness 100, ok, turn 0.</p>
   <canvas id="map" width="512" height="512" role="img" aria-label="A drawn island, 32 by 32 squares."></canvas>
   <ul class="legend">
     <li><span class="swatch" style="background:#3a7ca5"></span>water</li>
@@ -78,6 +86,8 @@
     <li><span class="swatch" style="background:#6f8f4e"></span>grass</li>
     <li><span class="swatch" style="background:#7e7a74"></span>rock</li>
     <li><span class="swatch" style="background:#2d6a3a"></span>tree</li>
+    <li><span class="swatch" style="background:#c0392b"></span>berries</li>
+    <li><span class="swatch" style="background:#1a5276"></span>fish</li>
     <li>stone is a circle, stick is a line, shell is an arc, you are the triangle</li>
   </ul>
   <div class="row">
@@ -91,7 +101,7 @@
     <input id="cmd" name="cmd" maxlength="240" autocomplete="off" spellcheck="false" aria-describedby="hint">
     <button type="submit">Run</button>
   </form>
-  <p id="hint">Try <code>look</code>, <code>move N</code>, <code>pick</code>, <code>place</code>, or Auto. Auto walks to the stone, carries it to the beach, and reports pass or fail.</p>
+  <p id="hint">Try <code>look</code>, <code>move N</code>, <code>eat</code>, or Auto. Auto gets hungry, eats berries, fishes with the stick, and must last 200 turns.</p>
   <pre id="reply" aria-live="polite"></pre>
   <p id="stamp"></p>
   <p><a href="https://github.com/RobertBoettcherSF/ai-island#plug-in-your-ai">Plug in your AI</a> · <a href="https://github.com/RobertBoettcherSF/ai-island">source</a></p>
@@ -110,6 +120,7 @@ let actx = null;
 let ada = null;
 let autoState = "not-run";
 let autoDetail = "";
+let lastVitals = {fullness: 100, turn: 0, hunger: "ok", collapse: null};
 let runningAuto = false;
 const errors = [];
 const log = [];
@@ -195,6 +206,19 @@ function draw() {
       ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
       const obj = ada.island_object(x, y);
       if (obj > 0) drawObject(ctx, obj, x, y);
+      const food = ada.island_food(x, y);
+      if (food === 1) {
+        ctx.fillStyle = "#c0392b";
+        ctx.fillRect(x * CELL + 4, y * CELL + 4, 8, 8);
+      } else if (food === 2) {
+        ctx.strokeStyle = "#6b3f1d";
+        ctx.strokeRect(x * CELL + 4, y * CELL + 4, 8, 8);
+      } else if (food === 3) {
+        ctx.fillStyle = "#1a5276";
+        ctx.beginPath();
+        ctx.arc(x * CELL + CELL / 2, y * CELL + CELL / 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
   const x = ada.island_agent_x();
@@ -232,6 +256,14 @@ function showReply(command, reply) {
     const hand = obj.hand == null ? "empty" : obj.hand;
     where.textContent = "At " + obj.x + "," + obj.y + " facing " + obj.facing + ", hand " + hand + ".";
   }
+  if (obj && typeof obj.fullness === "number") {
+    meter.setAttribute("aria-valuenow", String(obj.fullness));
+    meter.className = obj.hunger || "";
+    meterFill.style.width = obj.fullness + "%";
+    hungerLine.textContent = "Fullness " + obj.fullness + ", " + obj.hunger + ", turn " + obj.turn + ".";
+    lastVitals = {fullness: obj.fullness, turn: obj.turn, hunger: obj.hunger,
+      collapse: obj.reason === "collapsed" ? "collapsed" : (obj.hunger === "collapsed" ? "starved" : null)};
+  }
   return obj;
 }
 function replyEl() { return document.getElementById("reply"); }
@@ -256,46 +288,117 @@ function setAuto(text, ok) {
   else if (ok === false) { autoState = "fail"; autoDetail = text; }
 }
 function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-function demoCommands() {
-  const steps = ["new", "look", "move N", "pick"];
-  for (let i = 0; i < 11; i++) steps.push("move N");
-  steps.push("place", "look");
-  return steps;
-}
 function autoFailed(reason) {
   setAuto("Auto: fail — " + reason, false);
+}
+// Same policy as a hungry walker: berries first, then the stick, then fish,
+// and a patrol that changes direction. Coordinates match Island.Map.
+const BUSHES = [[18, 15], [12, 22], [24, 12], [14, 24]];
+const FISH = [[30, 17], [1, 22], [12, 30]];
+const FISH_STAND = {"30,17": [29, 17, "E"], "1,22": [2, 22, "W"], "12,30": [12, 29, "S"]};
+const STICK = [18, 16];
+const PATROL = [[12, 22], [24, 12], [14, 24], [29, 17], [10, 20], [22, 10], [8, 26], [20, 8], [26, 20]];
+const DELTA = {N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0]};
+const ORDER = ["N", "E", "S", "W"];
+function groundAt(x, y) {
+  if (x <= 1 || x >= 30 || y <= 1 || y >= 30) return "water";
+  if (x <= 4 || x >= 27 || y <= 4 || y >= 27) return "sand";
+  if ((x === 12 && y === 12) || (x === 20 && y === 18) || (x === 15 && y === 22)) return "rock";
+  if ((x === 10 && y === 10) || (x === 18 && y === 14) || (x === 14 && y === 20) || (x === 22 && y === 16) || (x === 11 && y === 18)) return "tree";
+  return "grass";
+}
+function canWalk(x, y) {
+  return x >= 0 && x <= 31 && y >= 0 && y <= 31 && (groundAt(x, y) === "sand" || groundAt(x, y) === "grass");
+}
+function stepToward(st, tx, ty) {
+  const options = [];
+  if (tx !== st.x) options.push(tx > st.x ? "E" : "W");
+  if (ty !== st.y) options.push(ty > st.y ? "S" : "N");
+  for (const d of ORDER) if (!options.includes(d)) options.push(d);
+  for (const d of options) {
+    const [dx, dy] = DELTA[d];
+    if (canWalk(st.x + dx, st.y + dy)) return "move " + d;
+  }
+  return "look";
+}
+function arrive(st, sx, sy, want, action) {
+  if (st.x === sx && st.y === sy && st.facing === want) return action;
+  if (st.x === sx && st.y === sy) {
+    const back = {N: "S", S: "N", E: "W", W: "E"}[want];
+    const [dx, dy] = DELTA[back];
+    if (canWalk(st.x + dx, st.y + dy)) return "move " + back;
+  }
+  return stepToward(st, sx, sy);
 }
 async function runAuto() {
   if (!ada || runningAuto) return;
   runningAuto = true;
   auto.disabled = true;
   setAuto("Auto: running", null);
-  const steps = demoCommands();
-  let last = null;
-  let pick = null;
+  const eaten = [0, 0, 0, 0];
+  let ateBerry = false, ateFish = false, sawHungry = false, patrol = 0;
+  const dirs = new Set();
   try {
-    for (const step of steps) {
-      blip();
-      const got = runCommand(step);
-      last = got.obj;
-      if (step === "pick") pick = got.obj;
-      if (!got.obj || got.obj.ok !== true) {
-        autoFailed((got.obj && got.obj.reason) || step + " was not ok");
+    let got = runCommand("new");
+    if (!got.obj || !got.obj.ok) { autoFailed("new failed"); return; }
+    got = runCommand("look");
+    let st = got.obj;
+    for (let n = 0; n < 600; n++) {
+      if (!reduced && n % 2 === 0) await wait(40);
+      if (!st) { autoFailed("no reply"); return; }
+      if (st.hunger === "hungry" || st.hunger === "weak") sawHungry = true;
+      if (st.hunger === "collapsed" || st.reason === "collapsed") {
+        autoFailed("collapsed at turn " + st.turn);
         return;
       }
-      if (!reduced) await wait(50);
+      if (st.turn >= 200 && ateBerry && ateFish && sawHungry && dirs.size >= 4) {
+        setAuto("Auto: pass", true);
+        return;
+      }
+      let cmd;
+      if (!ateBerry && (st.fullness < 40 || st.hunger === "hungry" || st.hunger === "weak")) {
+        let best = null;
+        BUSHES.forEach((b, i) => {
+          if (eaten[i] !== 0 && st.turn < eaten[i] + 40) return;
+          const d = Math.abs(b[0] - st.x) + Math.abs(b[1] - st.y);
+          if (!best || d < best[0]) best = [d, i, b];
+        });
+        if (!best) cmd = stepToward(st, PATROL[patrol % PATROL.length][0], PATROL[patrol % PATROL.length][1]);
+        else {
+          const b = best[2];
+          cmd = arrive(st, b[0] - 1, b[1], "E", "eat");
+        }
+      } else if (ateBerry && st.hand !== "stick") {
+        cmd = (st.x === STICK[0] && st.y === STICK[1] && st.hand == null) ? "pick" : stepToward(st, STICK[0], STICK[1]);
+      } else if (st.hand === "stick" && st.fullness < 70) {
+        let best = null;
+        for (const f of FISH) {
+          const stand = FISH_STAND[f[0] + "," + f[1]];
+          const d = Math.abs(stand[0] - st.x) + Math.abs(stand[1] - st.y);
+          if (!best || d < best[0]) best = [d, stand];
+        }
+        cmd = arrive(st, best[1][0], best[1][1], best[1][2], "eat");
+      } else {
+        const goal = PATROL[patrol % PATROL.length];
+        if (st.x === goal[0] && st.y === goal[1]) patrol++;
+        const next = PATROL[patrol % PATROL.length];
+        cmd = stepToward(st, next[0], next[1]);
+      }
+      if (cmd.startsWith("move ")) dirs.add(cmd.slice(-1));
+      const face = st.facing;
+      const px = st.x, py = st.y;
+      got = runCommand(cmd);
+      st = got.obj;
+      if (st && st.cmd === "eat" && st.ok && st.food === "berries") {
+        ateBerry = true;
+        const d = DELTA[face];
+        const spot = [px + d[0], py + d[1]];
+        const idx = BUSHES.findIndex((b) => b[0] === spot[0] && b[1] === spot[1]);
+        if (idx >= 0) eaten[idx] = st.turn;
+      }
+      if (st && st.cmd === "eat" && st.ok && st.food === "fish") ateFish = true;
     }
-    const stone = last && last.seen && last.seen.find((c) => c.x === 16 && c.y === 4 && c.object === "stone");
-    if (!pick || pick.hand !== "stone") autoFailed("did not pick the stone");
-    else if (!last || last.x !== 16 || last.y !== 4) autoFailed("not on the beach");
-    else if (last.ground !== "sand") autoFailed("beach is not sand");
-    else if (last.hand !== null) autoFailed("hand is not empty");
-    else if (!stone) autoFailed("stone is not on the beach");
-    else if (ada.island_agent_x() !== 16 || ada.island_agent_y() !== 4) autoFailed("picture disagrees");
-    else if (ada.island_hand() !== 0) autoFailed("picture hand disagrees");
-    else if (ada.island_object(16, 4) !== 1) autoFailed("picture stone disagrees");
-    else if (ada.island_cell(16, 4) !== 1) autoFailed("picture ground disagrees");
-    else setAuto("Auto: pass", true);
+    autoFailed("did not last 200 turns");
   } catch (e) {
     errors.push(String(e));
     autoFailed(String(e));
@@ -316,6 +419,10 @@ function report() {
     commands: log.slice(),
     auto: autoState,
     autoDetail: autoDetail,
+    fullness: lastVitals.fullness,
+    turn: lastVitals.turn,
+    hunger: lastVitals.hunger,
+    collapse: lastVitals.collapse,
     crash: crashedBefore ? {previous: true} : null
   };
 }

@@ -22,6 +22,7 @@ mkdir -p obj/wasm docs
   cd obj/wasm
   for F in \
     ../../src/island-map.adb \
+    ../../src/island-stomach.adb \
     ../../src/island-world.adb \
     ../../src/island-text.adb \
     ../../src/island-api.adb \
@@ -39,6 +40,7 @@ mkdir -p obj/wasm docs
     --export=island_reply_len \
     --export=island_cell \
     --export=island_object \
+    --export=island_food \
     --export=island_agent_x \
     --export=island_agent_y \
     --export=island_facing \

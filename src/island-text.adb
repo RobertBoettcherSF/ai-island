@@ -1,6 +1,10 @@
 with Island.Map;
+with Island.Stomach;
 
 package body Island.Text is
+   use type World.Eat_Result;
+   use type World.Food;
+   use type World.Say_Result;
 
    type Builder is record
       Data : String (1 .. Reply_Max) := [others => ' '];
@@ -198,7 +202,12 @@ package body Island.Text is
                Yc := Coord (Y);
                Id := Object_Here (S, Xc, Yc);
                Spot := Map.Terrain_At (Xc, Yc);
-               if Id /= 0 or else (Spot /= Sand and then Spot /= Grass) then
+               declare
+                  Here : constant World.Food := World.Food_At (S, Xc, Yc);
+               begin
+               if Id /= 0 or else Here /= World.None
+                 or else (Spot /= Sand and then Spot /= Grass)
+               then
                   if not Any then
                      Add (B, " You see:");
                   else
@@ -206,7 +215,13 @@ package body Island.Text is
                   end if;
                   Any := True;
                   Add (B, " ");
-                  if Id /= 0 then
+                  if Here = World.Berries then
+                     Add (B, "berries");
+                  elsif Here = World.Fish then
+                     Add (B, "fish");
+                  elsif Here = World.Bare then
+                     Add (B, "a bare bush");
+                  elsif Id /= 0 then
                      Add (B, "a ");
                      Add_Kind (B, S.Objects (Id).Kind);
                   else
@@ -217,6 +232,7 @@ package body Island.Text is
                   Add (B, ",");
                   Add_Nat (B, Natural (Yc));
                end if;
+               end;
             end if;
          end loop;
       end loop;
@@ -272,6 +288,17 @@ package body Island.Text is
                   Add_Kind (B, S.Objects (Id).Kind);
                   Add_Char (B, '"');
                end if;
+               Add (B, ",""food"":");
+               case World.Food_At (S, Xc, Yc) is
+                  when World.None =>
+                     Add (B, "null");
+                  when World.Berries =>
+                     Add (B, """berries""");
+                  when World.Bare =>
+                     Add (B, """bare""");
+                  when World.Fish =>
+                     Add (B, """fish""");
+               end case;
                Add_Char (B, '}');
             end if;
          end loop;
@@ -341,10 +368,58 @@ package body Island.Text is
       Take_R  : World.Take_Result;
       Drop_R  : World.Drop_Result;
       Say_R   : World.Say_Result;
+      Eat_R   : World.Eat_Result;
       Held    : Object_Kind;
+      Carry_Now : Boolean := False;
+      Weak_Now  : Boolean := False;
+
+      procedure Add_Hunger_Word is
+      begin
+         case Stomach.Status (S.Belly) is
+            when Stomach.Ok =>
+               Add (B, "ok");
+            when Stomach.Hungry =>
+               Add (B, "hungry");
+            when Stomach.Weak =>
+               Add (B, "weak");
+            when Stomach.Collapsed =>
+               Add (B, "collapsed");
+         end case;
+      end Add_Hunger_Word;
+
+      procedure Close_Cmd is
+      begin
+         Add (B, ",""turn"":");
+         Add_Nat (B, S.Turn);
+         Add (B, ",""fullness"":");
+         Add_Nat (B, Natural (S.Belly.Full));
+         Add (B, ",""hunger"":""");
+         Add_Hunger_Word;
+         Add (B, """}");
+      end Close_Cmd;
+
+      procedure Note is
+      begin
+         Carry_Now := S.Hand /= 0;
+         Weak_Now := Stomach.Is_Weak (S.Belly);
+      end Note;
+
+      procedure Spend (Is_Move : Boolean) is
+      begin
+         World.Advance (S, Is_Move, Weak_Now, Carry_Now);
+      end Spend;
 
       procedure Emit (Success : Boolean) is
       begin
+         if As_Text then
+            Add (B, " Fullness ");
+            Add_Nat (B, Natural (S.Belly.Full));
+            Add (B, ", ");
+            Add_Hunger_Word;
+            Add (B, ", turn ");
+            Add_Nat (B, S.Turn);
+            Add (B, ".");
+         end if;
          Reply := [others => ' '];
          pragma Assert (B.Len > 0 and then B.Len <= Reply_Max);
          Reply (1 .. B.Len) := B.Data (1 .. B.Len);
@@ -370,7 +445,8 @@ package body Island.Text is
                end if;
                Add_Char (B, C);
             end loop;
-            Add (B, """,""reason"":""unknown command""}");
+            Add (B, """,""reason"":""unknown command""");
+            Close_Cmd;
          end if;
          Emit (False);
       end Fail_Unknown;
@@ -382,7 +458,8 @@ package body Island.Text is
          else
             Add (B, "{""ok"":false,""cmd"":""");
             Add (B, Name);
-            Add (B, """,""reason"":""bad command""}");
+            Add (B, """,""reason"":""bad command""");
+            Close_Cmd;
          end if;
          Emit (False);
       end Fail_Bad;
@@ -422,6 +499,30 @@ package body Island.Text is
       R1 := I;
       R2 := Last;
 
+      if not Same (Command (V1 .. V2), "new") and then World.Collapsed (S) then
+         if As_Text then
+            Add (B, "You have collapsed.");
+         else
+            Add (B, "{""ok"":false,""reason"":""collapsed"",""cmd"":""");
+            declare
+               N : Integer := V2 - V1 + 1;
+               C : Character;
+            begin
+               if N > 24 then
+                  N := 24;
+               end if;
+               for K in 0 .. N - 1 loop
+                  C := Lower (Command (V1 + K));
+                  Add_Char (B, C);
+               end loop;
+            end;
+            Add (B, """");
+            Close_Cmd;
+         end if;
+         Emit (False);
+         return;
+      end if;
+
       if Same (Command (V1 .. V2), "new") then
          if Has then
             Fail_Bad ("new");
@@ -434,7 +535,7 @@ package body Island.Text is
          else
             Add (B, "{""ok"":true,""cmd"":""new"",");
             Add_Place_Json (B, S);
-            Add_Char (B, '}');
+            Close_Cmd;
          end if;
          Emit (True);
       elsif Same (Command (V1 .. V2), "look") then
@@ -442,6 +543,8 @@ package body Island.Text is
             Fail_Bad ("look");
             return;
          end if;
+         Note;
+         Spend (False);
          if As_Text then
             Add_You (B, S);
             Add_Seen_Text (B, S);
@@ -454,7 +557,7 @@ package body Island.Text is
             Add_Place_Json (B, S);
             Add_Said_Json (B, S);
             Add_Seen_Json (B, S);
-            Add_Char (B, '}');
+            Close_Cmd;
          end if;
          Emit (True);
       elsif Same (Command (V1 .. V2), "move") then
@@ -469,7 +572,9 @@ package body Island.Text is
                return;
             end if;
          end loop;
+         Note;
          World.Try_Move (S, Dir, Move_R, By);
+         Spend (True);
          case Move_R is
             when World.Moved =>
                if As_Text then
@@ -494,7 +599,7 @@ package body Island.Text is
                   Add_Dir_Letter (B, Dir);
                   Add (B, """,");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (True);
             when World.Blocked =>
@@ -511,7 +616,7 @@ package body Island.Text is
                   Add_Ground (B, By);
                   Add (B, """,");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (False);
             when World.Off_Map =>
@@ -524,7 +629,7 @@ package body Island.Text is
                   Add_Dir_Letter (B, Dir);
                   Add (B, """,""reason"":""blocked"",""by"":""edge"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (False);
          end case;
@@ -533,7 +638,9 @@ package body Island.Text is
             Fail_Bad ("pick");
             return;
          end if;
+         Note;
          World.Try_Pick (S, Take_R);
+         Spend (False);
          case Take_R is
             when World.Took =>
                if As_Text then
@@ -543,7 +650,7 @@ package body Island.Text is
                else
                   Add (B, "{""ok"":true,""cmd"":""pick"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (True);
             when World.Nothing_Here =>
@@ -552,7 +659,7 @@ package body Island.Text is
                else
                   Add (B, "{""ok"":false,""cmd"":""pick"",""reason"":""nothing here"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (False);
             when World.Hand_Full =>
@@ -561,7 +668,7 @@ package body Island.Text is
                else
                   Add (B, "{""ok"":false,""cmd"":""pick"",""reason"":""hand full"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (False);
          end case;
@@ -575,7 +682,9 @@ package body Island.Text is
          else
             Held := Stone;
          end if;
+         Note;
          World.Try_Place (S, Drop_R);
+         Spend (False);
          case Drop_R is
             when World.Placed =>
                if As_Text then
@@ -587,7 +696,7 @@ package body Island.Text is
                   Add_Kind (B, Held);
                   Add (B, """,");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (True);
             when World.Hand_Empty =>
@@ -596,7 +705,7 @@ package body Island.Text is
                else
                   Add (B, "{""ok"":false,""cmd"":""place"",""reason"":""hand empty"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (False);
             when World.Occupied =>
@@ -605,7 +714,82 @@ package body Island.Text is
                else
                   Add (B, "{""ok"":false,""cmd"":""place"",""reason"":""occupied"",");
                   Add_Place_Json (B, S);
-                  Add_Char (B, '}');
+                  Close_Cmd;
+               end if;
+               Emit (False);
+         end case;
+      elsif Same (Command (V1 .. V2), "eat") then
+         if Has then
+            Fail_Bad ("eat");
+            return;
+         end if;
+         Note;
+         World.Try_Eat (S, Eat_R);
+         Spend (False);
+         if Eat_R = World.Ate_Berry then
+            declare
+               FX : Integer := Integer (S.X);
+               FY : Integer := Integer (S.Y);
+            begin
+               case S.Facing is
+                  when North =>
+                     FY := FY - 1;
+                  when East =>
+                     FX := FX + 1;
+                  when South =>
+                     FY := FY + 1;
+                  when West =>
+                     FX := FX - 1;
+               end case;
+               if FX in Coord and then FY in Coord then
+                  World.Mark_Bush (S, Coord (FX), Coord (FY));
+               end if;
+            end;
+         end if;
+         case Eat_R is
+            when World.Ate_Berry =>
+               if As_Text then
+                  Add (B, "You eat berries.");
+               else
+                  Add (B, "{""ok"":true,""cmd"":""eat"",""food"":""berries"",");
+                  Add_Place_Json (B, S);
+                  Close_Cmd;
+               end if;
+               Emit (True);
+            when World.Ate_Fish =>
+               if As_Text then
+                  Add (B, "You eat a fish.");
+               else
+                  Add (B, "{""ok"":true,""cmd"":""eat"",""food"":""fish"",");
+                  Add_Place_Json (B, S);
+                  Close_Cmd;
+               end if;
+               Emit (True);
+            when World.Nothing =>
+               if As_Text then
+                  Add (B, "There is nothing to eat in front of you.");
+               else
+                  Add (B, "{""ok"":false,""cmd"":""eat"",""reason"":""nothing to eat"",");
+                  Add_Place_Json (B, S);
+                  Close_Cmd;
+               end if;
+               Emit (False);
+            when World.Not_Ripe =>
+               if As_Text then
+                  Add (B, "The bush has no berries yet.");
+               else
+                  Add (B, "{""ok"":false,""cmd"":""eat"",""reason"":""not ripe"",");
+                  Add_Place_Json (B, S);
+                  Close_Cmd;
+               end if;
+               Emit (False);
+            when World.Need_Stick =>
+               if As_Text then
+                  Add (B, "You need a stick to fish.");
+               else
+                  Add (B, "{""ok"":false,""cmd"":""eat"",""reason"":""need a stick"",");
+                  Add_Place_Json (B, S);
+                  Close_Cmd;
                end if;
                Emit (False);
          end case;
@@ -615,6 +799,7 @@ package body Island.Text is
             Inner_Last  : Natural;
             Quoted      : Boolean;
          begin
+            Note;
             if not Has then
                World.Try_Say (S, "", Say_R);
             else
@@ -636,6 +821,9 @@ package body Island.Text is
                end if;
             end if;
          end;
+         if Say_R = World.Said_Ok then
+            Spend (False);
+         end if;
          case Say_R is
             when World.Said_Ok =>
                if As_Text then
@@ -650,21 +838,23 @@ package body Island.Text is
                   else
                      Add_Json_String (B, S.Said (1 .. S.Said_Len));
                   end if;
-                  Add_Char (B, '}');
+                  Close_Cmd;
                end if;
                Emit (True);
             when World.Too_Long =>
                if As_Text then
                   Add (B, "You cannot say that: the text is too long.");
                else
-                  Add (B, "{""ok"":false,""cmd"":""say"",""reason"":""text too long""}");
+                  Add (B, "{""ok"":false,""cmd"":""say"",""reason"":""text too long""");
+                  Close_Cmd;
                end if;
                Emit (False);
             when World.Not_Plain =>
                if As_Text then
                   Add (B, "You cannot say that: use plain letters, digits and spaces.");
                else
-                  Add (B, "{""ok"":false,""cmd"":""say"",""reason"":""text not plain""}");
+                  Add (B, "{""ok"":false,""cmd"":""say"",""reason"":""text not plain""");
+                  Close_Cmd;
                end if;
                Emit (False);
          end case;

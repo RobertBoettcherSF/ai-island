@@ -33,6 +33,28 @@ package body Island.Map is
       return Ground = Sand or else Ground = Grass;
    end Walkable;
 
+   function Sand_Beside (X, Y : Coord) return Boolean is
+   begin
+      if X > Coord'First and then Terrain_At (X - 1, Y) = Sand then
+         return True;
+      end if;
+      if X < Coord'Last and then Terrain_At (X + 1, Y) = Sand then
+         return True;
+      end if;
+      if Y > Coord'First and then Terrain_At (X, Y - 1) = Sand then
+         return True;
+      end if;
+      if Y < Coord'Last and then Terrain_At (X, Y + 1) = Sand then
+         return True;
+      end if;
+      return False;
+   end Sand_Beside;
+
+   function Shallow (X, Y : Coord) return Boolean is
+   begin
+      return Terrain_At (X, Y) = Water and then Sand_Beside (X, Y);
+   end Shallow;
+
    function Layout_Ok return Boolean is
    begin
       pragma Assert (Terrain_At (Start_X, Start_Y) = Grass);
@@ -54,6 +76,23 @@ package body Island.Map is
             end if;
          end loop;
       end loop;
+      for I in Bush_Index loop
+         pragma Assert (Terrain_At (Bushes (I).X, Bushes (I).Y) = Grass);
+         for J in Bush_Index loop
+            if I /= J then
+               pragma Assert
+                 (Bushes (I).X /= Bushes (J).X
+                  or else Bushes (I).Y /= Bushes (J).Y);
+            end if;
+         end loop;
+      end loop;
+      for I in Fish_Index loop
+         pragma Assert (Shallow (Fish (I).X, Fish (I).Y));
+      end loop;
+      --  Food is not a single northward line from the start.
+      pragma Assert (Bushes (2).X /= Start_X);
+      pragma Assert (Fish (1).X /= Start_X);
+      pragma Assert (Bushes (1).Y /= Start_Y or else Bushes (1).X /= Start_X);
       return True;
    end Layout_Ok;
 

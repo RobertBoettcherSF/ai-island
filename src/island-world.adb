@@ -34,6 +34,14 @@ package body Island.World is
             end loop;
          end if;
       end loop;
+      if not Stomach.Levels_Ok (S.Belly) then
+         return False;
+      end if;
+      for I in S.Bush_Eaten'Range loop
+         if S.Bush_Eaten (I) > S.Turn then
+            return False;
+         end if;
+      end loop;
       return True;
    end Valid;
 
@@ -45,6 +53,9 @@ package body Island.World is
       S.Hand := 0;
       S.Said := [others => ' '];
       S.Said_Len := 0;
+      S.Belly := (Full => Stomach.Max_Fullness, Empty_For => 0, Collapsed => False);
+      S.Turn := 0;
+      S.Bush_Eaten := [others => 0];
       for I in Object_Index loop
          S.Objects (I).Kind := Map.Initial_Objects (I).Kind;
          S.Objects (I).X := Map.Initial_Objects (I).X;
@@ -214,11 +225,111 @@ package body Island.World is
       end case;
    end Kind_Code;
 
+   function Ripe (Eaten : Natural; Now : Natural) return Boolean is
+   begin
+      if Eaten = 0 then
+         return True;
+      end if;
+      pragma Assert (Eaten <= Natural'Last - Map.Regrow_Turns);
+      return Now >= Eaten + Map.Regrow_Turns;
+   end Ripe;
+
+   function Food_At (S : State; X, Y : Coord) return Food is
+   begin
+      for I in Map.Bush_Index loop
+         if Map.Bushes (I).X = X and then Map.Bushes (I).Y = Y then
+            if Ripe (S.Bush_Eaten (I), S.Turn) then
+               return Berries;
+            else
+               return Bare;
+            end if;
+         end if;
+      end loop;
+      for I in Map.Fish_Index loop
+         if Map.Fish (I).X = X and then Map.Fish (I).Y = Y then
+            return Fish;
+         end if;
+      end loop;
+      return None;
+   end Food_At;
+
+   function Collapsed (S : State) return Boolean is
+   begin
+      return S.Belly.Collapsed;
+   end Collapsed;
+
+   function Holding_Stick (S : State) return Boolean is
+   begin
+      return S.Hand /= 0 and then S.Objects (S.Hand).Kind = Stick;
+   end Holding_Stick;
+
+   procedure Try_Eat (S : in out State; Result : out Eat_Result) is
+      FX : Integer := Integer (S.X);
+      FY : Integer := Integer (S.Y);
+   begin
+      Result := Nothing;
+      case S.Facing is
+         when North =>
+            FY := FY - 1;
+         when East =>
+            FX := FX + 1;
+         when South =>
+            FY := FY + 1;
+         when West =>
+            FX := FX - 1;
+      end case;
+      if FX not in Coord or else FY not in Coord then
+         return;
+      end if;
+      case Food_At (S, Coord (FX), Coord (FY)) is
+         when None =>
+            Result := Nothing;
+         when Bare =>
+            Result := Not_Ripe;
+         when Berries =>
+            Stomach.Feed (S.Belly, Map.Berry_Gain);
+            Result := Ate_Berry;
+         when Fish =>
+            if not Holding_Stick (S) then
+               Result := Need_Stick;
+               return;
+            end if;
+            Stomach.Feed (S.Belly, Map.Fish_Gain);
+            Result := Ate_Fish;
+      end case;
+   end Try_Eat;
+
+   procedure Mark_Bush (S : in out State; X, Y : Coord) is
+   begin
+      for I in Map.Bush_Index loop
+         if Map.Bushes (I).X = X and then Map.Bushes (I).Y = Y then
+            S.Bush_Eaten (I) := S.Turn;
+            return;
+         end if;
+      end loop;
+   end Mark_Bush;
+
+   procedure Advance
+     (S        : in out State;
+      Is_Move  : Boolean;
+      Was_Weak : Boolean;
+      Carrying : Boolean)
+   is
+      Turns : Positive := 1;
+   begin
+      if Is_Move and then Was_Weak then
+         Turns := 2;
+      end if;
+      Stomach.Tick (S.Belly, Turns, Carrying);
+      pragma Assert (S.Turn <= Natural'Last - Natural (Turns));
+      S.Turn := S.Turn + Natural (Turns);
+   end Advance;
+
    procedure Write_Save (S : State; Buf : out String; Len : out Natural) is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 1");
+      Put_Text (Buf, Pos, "ai-island 2");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -245,6 +356,25 @@ package body Island.World is
       if S.Said_Len > 0 then
          Put_Text (Buf, Pos, S.Said (1 .. S.Said_Len));
       end if;
+      Put_Char (Buf, Pos, ASCII.LF);
+      Put_Nat (Buf, Pos, S.Turn);
+      Put_Char (Buf, Pos, ASCII.LF);
+      Put_Nat (Buf, Pos, Natural (S.Belly.Full));
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Belly.Empty_For);
+      Put_Char (Buf, Pos, ' ');
+      if S.Belly.Collapsed then
+         Put_Char (Buf, Pos, '1');
+      else
+         Put_Char (Buf, Pos, '0');
+      end if;
+      Put_Char (Buf, Pos, ASCII.LF);
+      for I in Map.Bush_Index loop
+         if I > Map.Bush_Index'First then
+            Put_Char (Buf, Pos, ' ');
+         end if;
+         Put_Nat (Buf, Pos, S.Bush_Eaten (I));
+      end loop;
       Put_Char (Buf, Pos, ASCII.LF);
       Len := Pos - 1;
    end Write_Save;
@@ -373,8 +503,10 @@ package body Island.World is
       Local : State;
       From  : Natural := Buf'First;
       F1, L1, F2, L2, F3, L3, F4, L4, F5, L5, F6, L6 : Natural;
+      F7, L7, F8, L8, F9, L9 : Natural;
       Pos   : Natural;
       Xn, Yn, Hand_N, Code, Present, Ox, Oy : Natural;
+      Turn_N, Full_N, Empty_N, Down_N, Bush_N : Natural;
       Dir   : Direction;
       Kind  : Object_Kind;
       Face  : Character;
@@ -387,10 +519,13 @@ package body Island.World is
       Next_Line (Buf, From, F4, L4, Good);
       Next_Line (Buf, From, F5, L5, Good);
       Next_Line (Buf, From, F6, L6, Good);
+      Next_Line (Buf, From, F7, L7, Good);
+      Next_Line (Buf, From, F8, L8, Good);
+      Next_Line (Buf, From, F9, L9, Good);
       if Good and then From /= Buf'Last + 1 then
          Good := False;
       end if;
-      if Good and then Buf (F1 .. L1) /= "ai-island 1" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 2" then
          Good := False;
       end if;
       if Good then
@@ -462,6 +597,47 @@ package body Island.World is
                   Good := False;
                end if;
             end loop;
+         end if;
+      end if;
+      if Good then
+         Pos := F7;
+         Take_Nat (Buf, Pos, L7, Turn_N, 1_000_000, Good);
+         if Good and then Pos /= L7 + 1 then
+            Good := False;
+         end if;
+         if Good then
+            Local.Turn := Turn_N;
+         end if;
+      end if;
+      if Good then
+         Pos := F8;
+         Take_Nat (Buf, Pos, L8, Full_N, Stomach.Max_Fullness, Good);
+         Expect (Buf, Pos, L8, ' ', Good);
+         Take_Nat (Buf, Pos, L8, Empty_N, 1_000, Good);
+         Expect (Buf, Pos, L8, ' ', Good);
+         Take_Nat (Buf, Pos, L8, Down_N, 1, Good);
+         if Good and then Pos /= L8 + 1 then
+            Good := False;
+         end if;
+         if Good then
+            Local.Belly.Full := Stomach.Fullness (Full_N);
+            Local.Belly.Empty_For := Empty_N;
+            Local.Belly.Collapsed := Down_N = 1;
+         end if;
+      end if;
+      if Good then
+         Pos := F9;
+         for I in Map.Bush_Index loop
+            if I > Map.Bush_Index'First then
+               Expect (Buf, Pos, L9, ' ', Good);
+            end if;
+            Take_Nat (Buf, Pos, L9, Bush_N, 1_000_000, Good);
+            if Good then
+               Local.Bush_Eaten (I) := Bush_N;
+            end if;
+         end loop;
+         if Good and then Pos /= L9 + 1 then
+            Good := False;
          end if;
       end if;
       if Good and then Valid (Local) then

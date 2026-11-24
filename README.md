@@ -49,6 +49,7 @@ make ADA_DRIVER=gcc-12
 | `move N` | Step north, east, south, or west. `E`, `S`, and `W` work the same way. `north` is also accepted. |
 | `pick` | Pick up the stone, stick, or shell on your square. Your hand holds one thing. |
 | `place` | Put the thing in your hand on your square, if the square is empty. |
+| `eat` | Eat the berries or the fish in front of you. Fish need the stick. |
 | `say "text"` | Remember a short note. Plain letters, digits, and spaces, up to 80 characters. |
 
 Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `occupied`, `unknown command`, `bad command`, `no world`, `bad save`, `text too long`, and `text not plain`.
@@ -80,11 +81,12 @@ Commands, one per run:
 ./bin/island move W
 ./bin/island pick
 ./bin/island place
+./bin/island eat
 ./bin/island say "a short note"
 
-Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, and the nearby squares. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
+Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, fullness, hunger, turn, and the nearby squares, including berries and fish. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. Berries are eaten from the bush in front of you. Fish need the stick. Hunger falls every action, faster while you carry something. At 0 you are weak, and after 20 more turns without food you collapse. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
 
-Find the stone, pick it up, carry it to sand, and place it. Then stop.
+Your goal is to stay alive. Do not follow a script. Eat when you need to, and keep going.
 ```
 
 Optional, and not used by the island itself: a local model or an API can sit in front of the same commands. Set `ISLAND_MODEL` to a program you supply. It reads the last JSON reply on stdin and prints the next command on stdout. No key is built in. If `ISLAND_MODEL` is unset, the loop does nothing.
@@ -112,7 +114,7 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs `new`, `look`, `move`, `pick`, `place`, and `look` against the files in `tests/expected/`. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, and checks the hunger countdown. `ldd bin/island` must not mention `libgnat`.
 
 The browser build is separate and does not download a compiler:
 
@@ -128,10 +130,10 @@ The zip for a local run:
 make zip
 ```
 
-Unpack `zips/ai-island-v0.1.zip`. It becomes `ai-island-v0.1/`.
+Unpack `zips/ai-island-v0.2.zip`. It becomes `ai-island-v0.2/`.
 
 ```sh
-cd ai-island-v0.1
+cd ai-island-v0.2
 ./island new
 ./island look
 ```

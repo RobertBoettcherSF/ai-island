@@ -19,6 +19,10 @@ package Island.API is
    function Object_At (X, Y : Integer) return Integer
      with Export, Convention => C, External_Name => "island_object";
 
+   --  0 none, 1 ripe berries, 2 bare bush, 3 fish.
+   function Food (X, Y : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_food";
+
    function Agent_X return Integer
      with Export, Convention => C, External_Name => "island_agent_x";
 

@@ -1,10 +1,11 @@
 -- World rules. Pass the state in; nothing here is global, and nothing
 -- here reads a clock or a file.
 with Island.Map;
+with Island.Stomach;
 
 package Island.World is
 
-   Save_Max : constant := 256;
+   Save_Max : constant := 512;
 
    type Object_Rec is record
       Kind      : Object_Kind := Stone;
@@ -15,14 +16,22 @@ package Island.World is
 
    type Object_Array is array (Object_Index) of Object_Rec;
 
+   --  0 means the bush is ripe. Otherwise the world turn when it was eaten.
+   type Bush_Times is array (Map.Bush_Index) of Natural;
+
+   type Food is (None, Berries, Bare, Fish);
+
    type State is record
-      X         : Coord := Map.Start_X;
-      Y         : Coord := Map.Start_Y;
-      Facing    : Direction := North;
-      Hand      : Hand_Index := 0;
-      Objects   : Object_Array;
-      Said      : String (1 .. Said_Max) := [others => ' '];
-      Said_Len  : Said_Count := 0;
+      X          : Coord := Map.Start_X;
+      Y          : Coord := Map.Start_Y;
+      Facing     : Direction := North;
+      Hand       : Hand_Index := 0;
+      Objects    : Object_Array;
+      Said       : String (1 .. Said_Max) := [others => ' '];
+      Said_Len   : Said_Count := 0;
+      Belly      : Stomach.Levels;
+      Turn       : Natural := 0;
+      Bush_Eaten : Bush_Times := [others => 0];
    end record;
 
    function Valid (S : State) return Boolean;
@@ -32,7 +41,10 @@ package Island.World is
        Valid (S) and then Map.Layout_Ok
        and then S.X = Map.Start_X and then S.Y = Map.Start_Y
        and then S.Facing = North and then S.Hand = 0
-       and then S.Said_Len = 0;
+       and then S.Said_Len = 0
+       and then S.Turn = 0
+       and then S.Belly.Full = Stomach.Max_Fullness
+       and then not S.Belly.Collapsed;
 
    type Move_Result is (Moved, Blocked, Off_Map);
 
@@ -84,6 +96,33 @@ package Island.World is
               (if Result /= Said_Ok then S = S'Old
                elsif Text'Length = 0 then S.Said_Len = 0
                else S.Said_Len = Text'Length);
+
+   type Eat_Result is (Ate_Berry, Ate_Fish, Nothing, Not_Ripe, Need_Stick);
+
+   --  Eat the food in front. Does not advance the turn; the caller does.
+   procedure Try_Eat (S : in out State; Result : out Eat_Result)
+     with Pre => Valid (S) and then not S.Belly.Collapsed,
+          Post => Valid (S);
+
+   function Food_At (S : State; X, Y : Coord) return Food
+     with Pre => Valid (S);
+
+   function Collapsed (S : State) return Boolean
+     with Pre => Valid (S);
+
+   --  Call after Advance on the turn the berries were eaten.
+   procedure Mark_Bush (S : in out State; X, Y : Coord)
+     with Pre => Valid (S),
+          Post => Valid (S);
+
+   --  One action. A move that started while weak advances two turns.
+   procedure Advance
+     (S        : in out State;
+      Is_Move  : Boolean;
+      Was_Weak : Boolean;
+      Carrying : Boolean)
+     with Pre => Valid (S) and then not S.Belly.Collapsed,
+          Post => Valid (S) and then S.Turn > S'Old.Turn;
 
    --  Versioned text image of the state. The native runner writes the bytes;
    --  this package does not open a file.

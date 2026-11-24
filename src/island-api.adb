@@ -1,4 +1,5 @@
 with Island.Map;
+with Island.Stomach;
 with Island.Text;
 with Island.World;
 with System;
@@ -111,6 +112,24 @@ package body Island.API is
       return 0;
    end Object_At;
 
+   function Food (X, Y : Integer) return Integer is
+   begin
+      Ensure;
+      if X not in Coord or else Y not in Coord then
+         return -1;
+      end if;
+      case World.Food_At (The_State, Coord (X), Coord (Y)) is
+         when World.None =>
+            return 0;
+         when World.Berries =>
+            return 1;
+         when World.Bare =>
+            return 2;
+         when World.Fish =>
+            return 3;
+      end case;
+   end Food;
+
    function Agent_X return Integer is
    begin
       Ensure;
@@ -213,6 +232,25 @@ package body Island.API is
       Reset;
       pragma Assert (The_State.Said_Len = 0);
       pragma Assert (Last_Ok);
+      declare
+         L : Stomach.Levels;
+      begin
+         L.Full := 0;
+         L.Empty_For := 0;
+         L.Collapsed := False;
+         for I in 1 .. Stomach.Starve_Turns loop
+            Stomach.Tick (L, 1, False);
+         end loop;
+         pragma Assert (L.Collapsed);
+         pragma Assert (L.Empty_For = Stomach.Starve_Turns);
+         L := (Full => 50, Empty_For => 0, Collapsed => False);
+         Stomach.Feed (L, Map.Berry_Gain);
+         pragma Assert (L.Full = 75);
+         Stomach.Feed (L, Map.Fish_Gain);
+         pragma Assert (L.Full = 100);
+      end;
+      pragma Assert (Food (Map.Bushes (1).X, Map.Bushes (1).Y) = 1);
+      pragma Assert (Food (Map.Fish (1).X, Map.Fish (1).Y) = 3);
       return True;
    end Self_Check;
 

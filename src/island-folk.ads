@@ -51,4 +51,14 @@ package Island.Folk is
    function Cross_Color
      (Mother, Father : Color_Pair; Seed, Index : Natural) return Color_Pair;
 
+   procedure Leave_Scent (S : in out World.State; X, Y : Coord)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
+   function Scent (S : World.State; X, Y : Coord) return Natural;
+
+   procedure Market_Deal (S : in out World.State; Who : World.Folk_Id; Did : out Boolean)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
 end Island.Folk;

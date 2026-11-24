@@ -408,4 +408,156 @@ package body Island.Map is
       return True;
    end Layout_Ok;
 
+   function Height (Seed : Seed_Value; X, Y : Coord) return Natural is
+      Rise : Natural;
+   begin
+      if Water_Cell (X, Y) then
+         return 0;
+      end if;
+      Rise := (abs (Integer (X) - 70) + abs (Integer (Y) - 62)) / 3;
+      if Y > 58 and then Hash (Seed, X, Y) mod 9 = 0 then
+         Rise := Rise + 8;
+      end if;
+      return Rise;
+   end Height;
+
+   function Mountain (Seed : Seed_Value; X, Y : Coord) return Boolean is
+   begin
+      return Height (Seed, X, Y) >= 14;
+   end Mountain;
+
+   type Path is array (1 .. River_Max) of Spot;
+   type Path_Set is array (River_Index) of Path;
+
+   River_Ready : Boolean := False;
+   River_Seed  : Seed_Value := 0;
+   River_Paths : Path_Set;
+   River_Lens  : array (River_Index) of Natural := [others => 0];
+
+   function Closer_To_Lake (X, Y, BX, BY : Integer) return Boolean is
+      D  : constant Integer := abs (X - 70) + abs (Y - 62);
+      DB : constant Integer := abs (BX - 70) + abs (BY - 62);
+   begin
+      return D < DB;
+   end Closer_To_Lake;
+
+   procedure Build_Rivers (Seed : Seed_Value) is
+      Starts : constant array (River_Index) of Spot :=
+        [1 => (X => 24, Y => 24),
+         2 => (X => 72, Y => 24),
+         3 => (X => 24, Y => 72),
+         4 => (X => 72, Y => 72)];
+      Seen : array (Coord, Coord) of Boolean := [others => [others => False]];
+      X, Y, BX, BY, NX, NY : Integer;
+      Best_H, H : Natural;
+      Step : Natural;
+   begin
+      for Which in River_Index loop
+         X := Integer (Starts (Which).X);
+         Y := Integer (Starts (Which).Y);
+         Step := 0;
+         Seen := [others => [others => False]];
+         while Step < River_Max loop
+            Step := Step + 1;
+            River_Paths (Which) (Step) := (X => Coord (X), Y => Coord (Y));
+            Seen (Coord (X), Coord (Y)) := True;
+            exit when Water_Cell (Coord (X), Coord (Y));
+            Best_H := Natural'Last;
+            BX := X;
+            BY := Y;
+            for Dir in 1 .. 4 loop
+               NX := X;
+               NY := Y;
+               case Dir is
+                  when 1 =>
+                     NY := NY - 1;
+                  when 2 =>
+                     NX := NX + 1;
+                  when 3 =>
+                     NY := NY + 1;
+                  when 4 =>
+                     NX := NX - 1;
+               end case;
+               if NX in Coord and then NY in Coord
+                 and then not Seen (Coord (NX), Coord (NY))
+               then
+                  H := Height (Seed, Coord (NX), Coord (NY));
+                  if H < Best_H
+                    or else (H = Best_H and then Closer_To_Lake (NX, NY, BX, BY))
+                  then
+                     Best_H := H;
+                     BX := NX;
+                     BY := NY;
+                  end if;
+               end if;
+            end loop;
+            exit when BX = X and then BY = Y;
+            X := BX;
+            Y := BY;
+         end loop;
+         River_Lens (Which) := Step;
+      end loop;
+      River_Seed := Seed;
+      River_Ready := True;
+   end Build_Rivers;
+
+   procedure Ensure_Rivers (Seed : Seed_Value) is
+   begin
+      if not River_Ready or else River_Seed /= Seed then
+         Build_Rivers (Seed);
+      end if;
+   end Ensure_Rivers;
+
+   function River_Length (Seed : Seed_Value; Which : River_Index) return Natural is
+   begin
+      Ensure_Rivers (Seed);
+      return River_Lens (Which);
+   end River_Length;
+
+   function River_Step
+     (Seed : Seed_Value; Which : River_Index; Step : Natural) return Spot
+   is
+   begin
+      Ensure_Rivers (Seed);
+      if Step in 1 .. River_Lens (Which) then
+         return River_Paths (Which) (Step);
+      end if;
+      return (X => 0, Y => 0);
+   end River_Step;
+
+   function On_River (Seed : Seed_Value; X, Y : Coord) return Boolean is
+   begin
+      Ensure_Rivers (Seed);
+      for Which in River_Index loop
+         for Step in 1 .. River_Lens (Which) loop
+            if River_Paths (Which) (Step).X = X
+              and then River_Paths (Which) (Step).Y = Y
+            then
+               return True;
+            end if;
+         end loop;
+      end loop;
+      return False;
+   end On_River;
+
+   function Drinkable (Seed : Seed_Value; X, Y : Coord) return Boolean is
+   begin
+      if Water_Cell (X, Y) or else On_River (Seed, X, Y) then
+         return True;
+      end if;
+      if X > Coord'First and then On_River (Seed, X - 1, Y) then
+         return True;
+      end if;
+      if X < Coord'Last and then On_River (Seed, X + 1, Y) then
+         return True;
+      end if;
+      if Y > Coord'First and then On_River (Seed, X, Y - 1) then
+         return True;
+      end if;
+      if Y < Coord'Last and then On_River (Seed, X, Y + 1) then
+         return True;
+      end if;
+      return False;
+   end Drinkable;
+
 end Island.Map;

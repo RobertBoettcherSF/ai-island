@@ -81,15 +81,15 @@
 <body>
 <main>
   <h1>AI Island</h1>
-  <p>A 96 by 96 island with a small population. Drag to pan, scroll to zoom, and click a creature. The same commands work in the terminal program <code>island</code>.</p>
+  <p hidden>A 96 by 96 island. Drag to pan, scroll to zoom, and click a creature or a home.</p>
   <p id="banner" hidden>This page is not the latest build. Reload it.</p>
   <p id="crash" hidden>The last visit did not close cleanly. Debug can save a report of it.</p>
-  <p id="where" aria-live="polite"></p>
-  <div id="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Fullness">
+  <p id="hungerLine">Fullness 100, ok, turn 0.</p>
+  <p id="where" aria-live="polite" hidden></p>
+  <div id="meter" hidden role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Fullness">
     <div id="meterFill"></div>
   </div>
-  <p id="hungerLine">Fullness 100, ok, turn 0.</p>
-  <p id="popLine">Population 13.</p>
+  <p id="popLine" hidden>Population 13.</p>
   <canvas id="map" width="640" height="640" role="img" aria-label="The whole island, 96 by 96 squares. Drag to pan and scroll to zoom."></canvas>
   <ul class="legend">
     <li><span class="swatch" style="background:#3a7ca5"></span>water</li>
@@ -98,6 +98,10 @@
     <li><span class="swatch" style="background:#7e7a74"></span>rock</li>
     <li><span class="swatch" style="background:#2d6a3a"></span>tree</li>
     <li><span class="swatch" style="background:#c0392b"></span>berries</li>
+    <li><span class="swatch" style="background:#5dade2"></span>river</li>
+    <li><span class="swatch" style="background:#c4a574"></span>trail</li>
+    <li><span class="swatch" style="background:#6b3f1d"></span>road</li>
+    <li><span class="swatch" style="background:#b7950b"></span>market</li>
     <li><span class="swatch" style="background:#1a5276"></span>fish</li>
     <li>you are the triangle. Groups: <span class="swatch" style="background:#143a5a"></span><span class="swatch" style="background:#c47b12"></span><span class="swatch" style="background:#2d6a3a"></span><span class="swatch" style="background:#8d1d2c"></span> caves are rings, huts are squares</li>
   </ul>
@@ -108,8 +112,7 @@
     <li><span class="swatch" style="background:#c47b12"></span>group 2</li>
     <li><span class="swatch" style="background:#2d6a3a"></span>group 3</li>
     <li><span class="swatch" style="background:#8d1d2c"></span>group 4</li>
-    <li><span class="swatch" style="background:#1b1916"></span>trades</li>
-    <li><span class="swatch" style="background:#7e7a74"></span>migrants</li>
+    <li>ticks mark a trade or a migrant</li>
   </ul>
   <div class="row">
     <label for="islandSeed">Island <input id="islandSeed" type="number" min="0" max="2147483647" value="539365668"></label>
@@ -129,13 +132,15 @@
     <button type="button" id="debug">Debug</button>
   </div>
   <p id="autoResult" role="status"></p>
+  <div id="debugPanel" hidden>
   <form id="play">
     <label for="cmd">Command</label>
     <input id="cmd" name="cmd" maxlength="240" autocomplete="off" spellcheck="false" aria-describedby="hint">
     <button type="submit">Run</button>
   </form>
-  <p id="hint">Try <code>look</code>, <code>world</code>, <code>move N</code>, or <code>eat</code>. Auto runs until you press Stop, then downloads <code>ai-island-run.json</code>. The same island and population seeds in the address reproduce the run.</p>
+  <p id="hint"><code>look</code>, <code>world</code>, <code>move N</code>, <code>gather</code>, <code>build</code>, <code>feed</code>, <code>trade</code>. F9 downloads the report.</p>
   <pre id="reply" aria-live="polite"></pre>
+  </div>
   <p id="stamp"></p>
   <p><a href="https://github.com/RobertBoettcherSF/ai-island#plug-in-your-ai">Plug in your AI</a> · <a href="https://github.com/RobertBoettcherSF/ai-island">source</a></p>
 </main>
@@ -160,6 +165,9 @@ let autoOn = false;
 let stopAfterTurn = false;
 let autoRun = null;
 let chartGroups = [];
+let chartMarks = [];
+let seenTrades = 0;
+let seenMigrants = 0;
 const DEFAULT_SEED = 539365668;
 const yieldChannel = new MessageChannel();
 let yieldWait = null;
@@ -274,12 +282,28 @@ function groupSnapshot() {
   }
   return groups;
 }
-function chartRow() {
+function pathReport() {
+  const markets = [];
+  for (let i = 1; i <= 4; i++) {
+    if (ada.island_market_x(i) < 0) continue;
+    markets.push({x: ada.island_market_x(i), y: ada.island_market_y(i), trades: ada.island_market_trades(i)});
+  }
+  return {
+    meetings: ada.island_meetings(),
+    trailLength: ada.island_trail_count(),
+    roadLength: ada.island_road_count(),
+    markets: markets,
+    thirst: ada.island_thirst()
+  };
+}
+function rememberChart() {
   const groups = groupSnapshot();
-  const row = groups.map((g) => g.population);
-  row.push(groups.reduce((sum, g) => sum + g.trades, 0));
-  row.push(groups.reduce((sum, g) => sum + g.migrantsIn, 0));
-  return row;
+  const trades = groups.reduce((sum, g) => sum + g.trades, 0);
+  const migrants = groups.reduce((sum, g) => sum + g.migrantsIn, 0);
+  chartGroups.push(groups.map((g) => g.population));
+  chartMarks.push(trades > seenTrades || migrants > seenMigrants);
+  seenTrades = trades;
+  seenMigrants = migrants;
 }
 function showInspect() {
   if (selectedHome && ada.island_home_used(selectedHome)) {
@@ -313,7 +337,8 @@ function showInspect() {
     + ". Speed " + ada.island_folk_speed(selected)
     + ", sight " + ada.island_folk_sight(selected)
     + ", metabolism " + ada.island_folk_meta(selected)
-    + ", fertility " + ada.island_folk_fert(selected) + ".";
+    + ", fertility " + ada.island_folk_fert(selected)
+    + (selected === 1 ? ", thirst " + ada.island_thirst() : "") + ".";
 }
 function draw() {
   if (!ada) return;
@@ -352,6 +377,36 @@ function draw() {
         ctx.fillRect(sx + 1, sy + 1, Math.max(2, view.scale * 0.35), Math.max(2, view.scale * 0.35));
       }
     }
+  }
+  for (let r = 1; r <= 4; r++) {
+    const len = ada.island_river_len(r);
+    ctx.fillStyle = "#5dade2";
+    for (let s = 1; s <= len; s++) {
+      const x = ada.island_river_x(r, s);
+      const y = ada.island_river_y(r, s);
+      ctx.fillRect((x - view.x) * view.scale, (y - view.y) * view.scale, Math.max(2, view.scale * 0.35), Math.max(2, view.scale * 0.35));
+    }
+  }
+  ctx.fillStyle = "#c4a574";
+  for (let i = 1; i <= 48; i++) {
+    const x = ada.island_trail_x(i);
+    if (x < 0) continue;
+    const y = ada.island_trail_y(i);
+    ctx.fillRect((x - view.x) * view.scale, (y - view.y) * view.scale, view.scale, Math.max(1, view.scale * 0.25));
+  }
+  ctx.fillStyle = "#6b3f1d";
+  for (let i = 1; i <= 16; i++) {
+    const x = ada.island_road_x(i);
+    if (x < 0) continue;
+    const y = ada.island_road_y(i);
+    ctx.fillRect((x - view.x) * view.scale, (y - view.y) * view.scale + view.scale * 0.35, view.scale, Math.max(2, view.scale * 0.3));
+  }
+  for (let i = 1; i <= 4; i++) {
+    const x = ada.island_market_x(i);
+    if (x < 0) continue;
+    const y = ada.island_market_y(i);
+    ctx.fillStyle = "#b7950b";
+    ctx.fillRect((x - view.x) * view.scale + 1, (y - view.y) * view.scale + 1, Math.max(3, view.scale - 2), Math.max(3, view.scale - 2));
   }
   const homes = ada.island_home_max();
   const groupColor = ["#143a5a", "#c47b12", "#2d6a3a", "#8d1d2c"];
@@ -427,9 +482,7 @@ function drawChart() {
     [1, "#143a5a", 40],
     [2, "#c47b12", 40],
     [3, "#2d6a3a", 40],
-    [4, "#8d1d2c", 40],
-    [5, "#1b1916", 80],
-    [6, "#7e7a74", 40]
+    [4, "#8d1d2c", 40]
   ];
   for (const [field, color, scale] of series) {
     ctx.strokeStyle = color;
@@ -441,6 +494,10 @@ function drawChart() {
       const py = h - 6 - Math.max(0, Math.min(1, v)) * (h - 16);
       if (i === 1) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
+      if (chartMarks[i - 1]) {
+        ctx.fillStyle = color;
+        ctx.fillRect(px - 2, py - 8, 4, 4);
+      }
     }
     ctx.stroke();
   }
@@ -454,7 +511,8 @@ function refreshHud() {
   if (full === 0) hunger = "weak";
   else if (full < 30) hunger = "hungry";
   meter.className = hunger;
-  hungerLine.textContent = "Fullness " + full + ", " + hunger + ", turn " + turn + ".";
+  hungerLine.textContent = "Fullness " + full + ", " + hunger + ", thirst " + ada.island_thirst()
+    + ", turn " + turn + ", " + ada.island_population() + " alive.";
   popLine.textContent = "Population " + ada.island_population()
     + ", births " + ada.island_births()
     + ", deaths " + ada.island_deaths()
@@ -555,7 +613,11 @@ function applySeeds(island, pop) {
   ada.island_reset_seeds(island, pop);
   selected = 0;
   selectedHome = 0;
-  chartGroups = [chartRow()];
+  chartGroups = [];
+  chartMarks = [];
+  seenTrades = 0;
+  seenMigrants = 0;
+  rememberChart();
   refreshHud();
   draw();
   drawChart();
@@ -566,7 +628,7 @@ function noteHistory() {
   const last = autoRun.history[autoRun.history.length - 1];
   if (last && last.turn === turn) return;
   const groups = groupSnapshot();
-  chartGroups.push(chartRow());
+  rememberChart();
   autoRun.history.push({
     turn: turn,
     population: ada.island_population(),
@@ -600,7 +662,8 @@ function finishAuto() {
     end: end,
     history: autoRun.history,
     groups: groupSnapshot(),
-    commands: log.slice()
+    commands: log.slice(),
+    ...pathReport()
   };
   window.aiIslandLastRun = file;
   downloadRun(file);
@@ -698,6 +761,7 @@ function report() {
     per100Ms: frame100Ms,
     samples: samples,
     groups: ada ? groupSnapshot() : [],
+    paths: ada ? pathReport() : null,
     crash: crashedBefore ? {previous: true} : null
   };
 }
@@ -780,7 +844,7 @@ randomSeeds.onclick = () => {
   if (autoOn) return;
   applySeeds(Math.floor(Math.random() * 2147483647), Math.floor(Math.random() * 2147483647));
 };
-debug.onclick = () => downloadReport();
+debug.onclick = () => { debugPanel.hidden = !debugPanel.hidden; };
 play.onsubmit = (ev) => {
   ev.preventDefault();
   unlock();

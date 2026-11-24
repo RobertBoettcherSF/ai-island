@@ -77,4 +77,23 @@ package Island.Map is
 
    function Layout_Ok return Boolean;
 
+   --  Height is 0 on open water and rises away from the lake.
+   --  Southern hills are higher, which is where the stones sit.
+   function Height (Seed : Seed_Value; X, Y : Coord) return Natural;
+
+   function Mountain (Seed : Seed_Value; X, Y : Coord) return Boolean;
+
+   River_Count : constant := 4;
+   subtype River_Index is Integer range 1 .. River_Count;
+   River_Max : constant := 40;
+
+   function River_Length (Seed : Seed_Value; Which : River_Index) return Natural;
+
+   function River_Step
+     (Seed : Seed_Value; Which : River_Index; Step : Natural) return Spot;
+
+   function On_River (Seed : Seed_Value; X, Y : Coord) return Boolean;
+
+   function Drinkable (Seed : Seed_Value; X, Y : Coord) return Boolean;
+
 end Island.Map;

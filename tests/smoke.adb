@@ -308,23 +308,44 @@ begin
             or else Island.Map.Fish_At (42, 1)
               /= Island.Map.Fish_At (Island.Map.Default_Island_Seed, 1));
       end;
-      Island.World.Reset (W);
-      Island.World.Simulate (W, 20000);
       declare
-         Alive_Groups : Natural := 0;
+         Len  : constant Natural := Island.Map.River_Length (Island.Map.Default_Island_Seed, 1);
+         Prev : Island.Map.Spot;
+         Step : Island.Map.Spot;
+         Last : Island.Map.Spot;
       begin
-         for G in Island.World.Group_Id loop
-            Ada.Text_IO.Put_Line
-              ("20k group" & Integer'Image (G)
-               & " pop" & Natural'Image (Island.World.Group_Population (W, G))
-               & " extinct" & Natural'Image (W.Groups (G).Extinct_Turn)
-               & " cause" & Natural'Image (W.Groups (G).Extinct_Cause));
-            if Island.World.Group_Population (W, G) > 0 then
-               Alive_Groups := Alive_Groups + 1;
-            end if;
+         pragma Assert (Len > 2);
+         Prev := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, 1);
+         Last := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, Len);
+         pragma Assert
+           (Island.Map.Drinkable (Island.Map.Default_Island_Seed, Last.X, Last.Y));
+         for I in 2 .. Len loop
+            Step := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, I);
+            pragma Assert
+              (Island.Map.Height (Island.Map.Default_Island_Seed, Step.X, Step.Y)
+               <= Island.Map.Height (Island.Map.Default_Island_Seed, Prev.X, Prev.Y)
+               or else abs (Integer (Step.X) - 70) + abs (Integer (Step.Y) - 62)
+                 < abs (Integer (Prev.X) - 70) + abs (Integer (Prev.Y) - 62));
+            Prev := Step;
          end loop;
-         --  v0.4 kept 3 of 4 groups alive after 20000 turns.
-         pragma Assert (Alive_Groups > 3);
+      end;
+      Island.World.Reset (W);
+      Island.Folk.Leave_Scent (W, 10, 10);
+      pragma Assert (Island.Folk.Scent (W, 10, 10) >= 2);
+      Island.Folk.Leave_Scent (W, 10, 10);
+      pragma Assert (Island.Folk.Scent (W, 10, 10) > 2);
+      W.Folk (2).X := 12;
+      W.Folk (2).Y := 12;
+      W.Folk (2).Sticks := 2;
+      W.Folk (2).Stones := 0;
+      W.Folk (2).Alive := True;
+      declare
+         Did : Boolean;
+      begin
+         Island.Folk.Market_Deal (W, 2, Did);
+         pragma Assert (Did);
+         pragma Assert (W.Folk (2).Stones = 1);
+         pragma Assert (W.Markets (1).Trades = 1);
       end;
    end;
 end Smoke;

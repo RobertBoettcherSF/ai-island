@@ -714,6 +714,147 @@ package body Island.API is
       return Integer ((High * 1000) / Total);
    end Group_Allele;
 
+   function River_Length (Which : Integer) return Integer is
+   begin
+      Ensure;
+      if Which not in Map.River_Index then
+         return 0;
+      end if;
+      return Integer (Map.River_Length (The_State.Island_Seed, Which));
+   end River_Length;
+
+   function River_X (Which, Step : Integer) return Integer is
+   begin
+      Ensure;
+      if Which not in Map.River_Index or else Step < 1 then
+         return -1;
+      end if;
+      return Integer (Map.River_Step (The_State.Island_Seed, Which, Step).X);
+   end River_X;
+
+   function River_Y (Which, Step : Integer) return Integer is
+   begin
+      Ensure;
+      if Which not in Map.River_Index or else Step < 1 then
+         return -1;
+      end if;
+      return Integer (Map.River_Step (The_State.Island_Seed, Which, Step).Y);
+   end River_Y;
+
+   function Trail_Count return Integer is
+      N : Natural := 0;
+   begin
+      Ensure;
+      for I in World.Trail_Id loop
+         if The_State.Trails (I).Used then
+            N := N + 1;
+         end if;
+      end loop;
+      return Integer (N);
+   end Trail_Count;
+
+   function Used_Trail (I : Integer) return Boolean is
+     (I in World.Trail_Id and then The_State.Trails (I).Used);
+
+   function Trail_X (I : Integer) return Integer is
+   begin
+      Ensure;
+      if not Used_Trail (I) then
+         return -1;
+      end if;
+      return Integer (The_State.Trails (I).X);
+   end Trail_X;
+
+   function Trail_Y (I : Integer) return Integer is
+   begin
+      Ensure;
+      if not Used_Trail (I) then
+         return -1;
+      end if;
+      return Integer (The_State.Trails (I).Y);
+   end Trail_Y;
+
+   function Road_Count return Integer is
+      N : Natural := 0;
+   begin
+      Ensure;
+      for I in World.Road_Id loop
+         if The_State.Roads (I).Used then
+            N := N + 1;
+         end if;
+      end loop;
+      return Integer (N);
+   end Road_Count;
+
+   function Road_X (I : Integer) return Integer is
+   begin
+      Ensure;
+      if I not in World.Road_Id or else not The_State.Roads (I).Used then
+         return -1;
+      end if;
+      return Integer (The_State.Roads (I).X);
+   end Road_X;
+
+   function Road_Y (I : Integer) return Integer is
+   begin
+      Ensure;
+      if I not in World.Road_Id or else not The_State.Roads (I).Used then
+         return -1;
+      end if;
+      return Integer (The_State.Roads (I).Y);
+   end Road_Y;
+
+   function Market_Count return Integer is
+      N : Natural := 0;
+   begin
+      Ensure;
+      for I in World.Market_Id loop
+         if The_State.Markets (I).Used then
+            N := N + 1;
+         end if;
+      end loop;
+      return Integer (N);
+   end Market_Count;
+
+   function Market_X (I : Integer) return Integer is
+   begin
+      Ensure;
+      if I not in World.Market_Id or else not The_State.Markets (I).Used then
+         return -1;
+      end if;
+      return Integer (The_State.Markets (I).X);
+   end Market_X;
+
+   function Market_Y (I : Integer) return Integer is
+   begin
+      Ensure;
+      if I not in World.Market_Id or else not The_State.Markets (I).Used then
+         return -1;
+      end if;
+      return Integer (The_State.Markets (I).Y);
+   end Market_Y;
+
+   function Market_Trades (I : Integer) return Integer is
+   begin
+      Ensure;
+      if I not in World.Market_Id or else not The_State.Markets (I).Used then
+         return 0;
+      end if;
+      return Integer (The_State.Markets (I).Trades);
+   end Market_Trades;
+
+   function Meetings return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Meetings);
+   end Meetings;
+
+   function Thirst return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Folk (World.Player_Id).Thirst);
+   end Thirst;
+
    function Home_Store (H, Kind : Integer) return Integer is
    begin
       Ensure;

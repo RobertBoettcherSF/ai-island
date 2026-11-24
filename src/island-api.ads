@@ -204,4 +204,49 @@ package Island.API is
    function Home_Store (H, Kind : Integer) return Integer
      with Export, Convention => C, External_Name => "island_home_store";
 
+   function River_Length (Which : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_river_len";
+
+   function River_X (Which, Step : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_river_x";
+
+   function River_Y (Which, Step : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_river_y";
+
+   function Trail_Count return Integer
+     with Export, Convention => C, External_Name => "island_trail_count";
+
+   function Trail_X (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_trail_x";
+
+   function Trail_Y (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_trail_y";
+
+   function Road_Count return Integer
+     with Export, Convention => C, External_Name => "island_road_count";
+
+   function Road_X (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_road_x";
+
+   function Road_Y (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_road_y";
+
+   function Market_Count return Integer
+     with Export, Convention => C, External_Name => "island_market_count";
+
+   function Market_X (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_market_x";
+
+   function Market_Y (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_market_y";
+
+   function Market_Trades (I : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_market_trades";
+
+   function Meetings return Integer
+     with Export, Convention => C, External_Name => "island_meetings";
+
+   function Thirst return Integer
+     with Export, Convention => C, External_Name => "island_thirst";
+
 end Island.API;

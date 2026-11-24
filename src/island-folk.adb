@@ -135,14 +135,75 @@ package body Island.Folk is
       S.Folk (Who).Sp_B := S.Folk (Who).Sp_A;
       S.Folk (Who).Si_A := 1 + Mix (S.Pop_Seed, Who, 2, 0) mod 3;
       S.Folk (Who).Si_B := S.Folk (Who).Si_A;
-      S.Folk (Who).Me_A := 1;
-      S.Folk (Who).Me_B := 1;
+      S.Folk (Who).Me_A := 2;
+      S.Folk (Who).Me_B := 2;
       S.Folk (Who).Fe_A := 1 + Mix (S.Pop_Seed, Who, 3, 0) mod 3;
       S.Folk (Who).Fe_B := S.Folk (Who).Fe_A;
       S.Folk (Who).Col_A := Mix (S.Pop_Seed, Who, 5, 0) mod 2;
       S.Folk (Who).Col_B := Mix (S.Pop_Seed, Who, 6, 0) mod 2;
       Express (S.Folk (Who));
    end Place_Adult;
+
+   function Dry (S : World.State; X, Y : Integer) return Boolean is
+   begin
+      return X in Coord and then Y in Coord
+        and then Map.Walkable (Map.Terrain_At (S.Island_Seed, Coord (X), Coord (Y)));
+   end Dry;
+
+   function Camp_By_Water (S : World.State; G : World.Group_Id) return Corner is
+      Base : constant Corner := Corners (G);
+      P    : Map.Spot;
+      NX, NY : Integer;
+   begin
+      for Step in 1 .. Map.River_Length (S.Island_Seed, G) loop
+         P := Map.River_Step (S.Island_Seed, G, Step);
+         if abs (Integer (P.X) - Integer (Base.X))
+              + abs (Integer (P.Y) - Integer (Base.Y)) <= 28
+         then
+            for Dir in 1 .. 4 loop
+               NX := Integer (P.X);
+               NY := Integer (P.Y);
+               case Dir is
+                  when 1 =>
+                     NY := NY - 1;
+                  when 2 =>
+                     NX := NX + 1;
+                  when 3 =>
+                     NY := NY + 1;
+                  when others =>
+                     NX := NX - 1;
+               end case;
+               if Dry (S, NX, NY) then
+                  return (X => Coord (NX), Y => Coord (NY));
+               end if;
+            end loop;
+         end if;
+      end loop;
+      return Base;
+   end Camp_By_Water;
+
+   function Hill_At (S : World.State; G : World.Group_Id) return Corner is
+      Base : constant Corner := Corners (G);
+      Best : Corner := Base;
+      Best_H : Natural := 0;
+      X, Y : Integer;
+      H : Natural;
+   begin
+      for DY in 0 .. 10 loop
+         for DX in -6 .. 6 loop
+            X := Integer (Base.X) + DX;
+            Y := Integer (Base.Y) + DY;
+            if Dry (S, X, Y) then
+               H := Map.Height (S.Island_Seed, Coord (X), Coord (Y));
+               if H > Best_H then
+                  Best_H := H;
+                  Best := (X => Coord (X), Y => Coord (Y));
+               end if;
+            end if;
+         end loop;
+      end loop;
+      return Best;
+   end Hill_At;
 
    procedure Setup (S : in out World.State) is
       N : Positive := 1;
@@ -155,6 +216,10 @@ package body Island.Folk is
       S.Groups := [others => <>];
       S.Trust := [others => [others => 2]];
       S.Notes := [others => [others => <>]];
+      S.Trails := [others => <>];
+      S.Roads := [others => <>];
+      S.Markets := [others => <>];
+      S.Meetings := 0;
       for I in World.Folk_Id loop
          S.Folk (I) := (others => <>);
          S.Folk (I).Alive := False;
@@ -169,26 +234,32 @@ package body Island.Folk is
          Fish => 0, Scout => False, Migrate => 0,
          Sp_A => 1, Sp_B => 1, Si_A => 2, Si_B => 2,
          Me_A => 1, Me_B => 1, Fe_A => 2, Fe_B => 2,
-         Col_A => 1, Col_B => 0);
+         Col_A => 1, Col_B => 0, Thirst => 0);
       for G in World.Group_Id loop
-         C := Corners (G);
+         C := Camp_By_Water (S, G);
          S.Homes (G) :=
            (Used => True, Kind => World.Cave, Group => G,
             X => C.X, Y => C.Y, Capacity => World.Home_Capacity, others => <>);
-         if G <= 2 then
+         declare
+            Hill : constant Corner := Hill_At (S, G);
+            Stick_N : Natural;
+            Stone_N : Natural;
+         begin
+            if G <= 2 then
+               Stick_N := 12;
+               Stone_N := 2;
+            else
+               Stick_N := 3;
+               Stone_N := 14;
+            end if;
             S.Piles (G) :=
-              (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 12);
+              (Kind => World.Stick_Pile, X => C.X, Y => C.Y, Count => Stick_N);
             S.Piles (World.Group_Id'Last + G) :=
-              (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 2);
-         else
-            S.Piles (G) :=
-              (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 3);
-            S.Piles (World.Group_Id'Last + G) :=
-              (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 14);
-         end if;
-         Place_Adult (S, N + 1, G, C.X + 1, C.Y);
-         Place_Adult (S, N + 2, G, C.X, C.Y + 1);
-         Place_Adult (S, N + 3, G, C.X + 1, C.Y + 1);
+              (Kind => World.Stone_Pile, X => Hill.X, Y => Hill.Y, Count => Stone_N);
+         end;
+         Place_Adult (S, N + 1, G, C.X, C.Y);
+         Place_Adult (S, N + 2, G, C.X, C.Y);
+         Place_Adult (S, N + 3, G, C.X, C.Y);
          N := N + 3;
       end loop;
    end Setup;
@@ -212,6 +283,61 @@ package body Island.Folk is
    begin
       return Eaten = 0 or else S.Turn >= Eaten + Map.Regrow_Turns;
    end Bush_Ripe;
+
+   function Pace (C : World.Folk_Rec) return Positive is
+      N : Natural := C.Speed;
+   begin
+      if C.Metabolism = 1 then
+         N := 1;
+      elsif C.Metabolism = 2 and then N > 2 then
+         N := 2;
+      end if;
+      return Positive (N);
+   end Pace;
+
+   function Trail_Of (S : World.State; X, Y : Coord) return Natural is
+   begin
+      for I in World.Trail_Id loop
+         if S.Trails (I).Used
+           and then S.Trails (I).X = X
+           and then S.Trails (I).Y = Y
+         then
+            return S.Trails (I).Strength;
+         end if;
+      end loop;
+      return 0;
+   end Trail_Of;
+
+   function Road_Here (S : World.State; X, Y : Coord) return Boolean is
+   begin
+      for I in World.Road_Id loop
+         if S.Roads (I).Used
+           and then S.Roads (I).X = X
+           and then S.Roads (I).Y = Y
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Road_Here;
+
+   procedure Stamp (S : in out World.State; X, Y : Coord) is
+   begin
+      for I in World.Trail_Id loop
+         if S.Trails (I).Used and then S.Trails (I).X = X and then S.Trails (I).Y = Y then
+            if S.Trails (I).Strength < 20 then
+               S.Trails (I).Strength := S.Trails (I).Strength + 2;
+            end if;
+            return;
+         end if;
+      end loop;
+      for I in World.Trail_Id loop
+         if not S.Trails (I).Used then
+            S.Trails (I) := (Used => True, X => X, Y => Y, Strength => 2);
+            return;
+         end if;
+      end loop;
+   end Stamp;
 
    procedure Face_Step
      (S      : in out World.State;
@@ -249,6 +375,40 @@ package body Island.Folk is
          Choice (1) := Choice (2);
          Choice (2) := Dir;
       end if;
+      if N_Choice = 2 then
+         declare
+            AX, AY, BX, BY : Integer;
+            SA, SB : Natural;
+         begin
+            AX := Integer (S.Folk (Who).X);
+            AY := Integer (S.Folk (Who).Y);
+            BX := AX;
+            BY := AY;
+            case Choice (1) is
+               when North => AY := AY - 1;
+               when East => AX := AX + 1;
+               when South => AY := AY + 1;
+               when West => AX := AX - 1;
+            end case;
+            case Choice (2) is
+               when North => BY := BY - 1;
+               when East => BX := BX + 1;
+               when South => BY := BY + 1;
+               when West => BX := BX - 1;
+            end case;
+            if AX in Coord and then AY in Coord
+              and then BX in Coord and then BY in Coord
+            then
+               SA := Trail_Of (S, Coord (AX), Coord (AY));
+               SB := Trail_Of (S, Coord (BX), Coord (BY));
+               if SB > SA then
+                  Dir := Choice (1);
+                  Choice (1) := Choice (2);
+                  Choice (2) := Dir;
+               end if;
+            end if;
+         end;
+      end if;
       for K in 1 .. N_Choice loop
          Dir := Choice (K);
          NX := Integer (S.Folk (Who).X);
@@ -268,7 +428,35 @@ package body Island.Folk is
            and then
              (World.Home_At (S, Coord (NX), Coord (NY)) /= 0
               or else not Occupied (S, Coord (NX), Coord (NY), Who))
+           and then
+             (Road_Here (S, Coord (NX), Coord (NY))
+              or else not Map.Mountain (S.Island_Seed, Coord (NX), Coord (NY))
+              or else (Who + S.Turn) mod 2 = 0)
          then
+            declare
+               Home : constant Corner := Corners (S.Folk (Who).Group);
+               Old_D : constant Natural :=
+                 Dist (S.Folk (Who).X, S.Folk (Who).Y, Home.X, Home.Y);
+               New_D : constant Natural :=
+                 Dist (Coord (NX), Coord (NY), Home.X, Home.Y);
+               OX : constant Coord := S.Folk (Who).X;
+               OY : constant Coord := S.Folk (Who).Y;
+            begin
+               if New_D < Old_D then
+                  Stamp (S, OX, OY);
+               end if;
+               if Road_Here (S, Coord (NX), Coord (NY)) then
+                  for R in World.Road_Id loop
+                     if S.Roads (R).Used
+                       and then S.Roads (R).X = Coord (NX)
+                       and then S.Roads (R).Y = Coord (NY)
+                       and then S.Roads (R).Life < 40
+                     then
+                        S.Roads (R).Life := S.Roads (R).Life + 2;
+                     end if;
+                  end loop;
+               end if;
+            end;
             S.Folk (Who).X := Coord (NX);
             S.Folk (Who).Y := Coord (NY);
             S.Folk (Who).Facing := Dir;
@@ -302,7 +490,11 @@ package body Island.Folk is
    is
       Moved : Boolean;
    begin
-      for Step in 1 .. S.Folk (Who).Speed loop
+      if S.Folk (Who).Metabolism = 1 and then (Who + S.Turn) mod 2 = 1 then
+         Try_Berry (S, Who);
+         return;
+      end if;
+      for Step in 1 .. Pace (S.Folk (Who)) loop
          Face_Step (S, Who, TX, TY, Moved);
          exit when not Moved;
          exit when S.Folk (Who).X = TX and then S.Folk (Who).Y = TY;
@@ -427,7 +619,7 @@ package body Island.Folk is
    procedure Take_Berry (S : in out World.State; Who : World.Folk_Id) is
       Spot : Map.Spot;
    begin
-      if S.Folk (Who).Food > 0 then
+      if S.Folk (Who).Food >= S.Folk (Who).Metabolism then
          return;
       end if;
       for I in Map.Bush_Index loop
@@ -436,7 +628,7 @@ package body Island.Folk is
            and then abs (Integer (Spot.X) - Integer (S.Folk (Who).X)) <= 1
            and then abs (Integer (Spot.Y) - Integer (S.Folk (Who).Y)) <= 1
          then
-            S.Folk (Who).Food := 1;
+            S.Folk (Who).Food := S.Folk (Who).Food + 1;
             World.Mark_Bush (S, Spot.X, Spot.Y);
             for Other in World.Folk_Id loop
                if S.Folk (Other).Alive
@@ -552,22 +744,6 @@ package body Island.Folk is
       end loop;
    end Note_Seen;
 
-   function Noted_Target
-     (S : World.State; G : World.Group_Id; X, Y : out Coord) return Boolean
-   is
-   begin
-      for I in World.Note_Id loop
-         if S.Notes (G) (I).Known and then S.Notes (G) (I).Kind = World.Note_Food then
-            X := S.Notes (G) (I).X;
-            Y := S.Notes (G) (I).Y;
-            return True;
-         end if;
-      end loop;
-      X := 0;
-      Y := 0;
-      return False;
-   end Noted_Target;
-
    procedure Others_Act (S : in out World.State) is
       Best      : Natural;
       Best_X    : Coord;
@@ -585,12 +761,16 @@ package body Island.Folk is
             end if;
             Found := False;
             if S.Folk (Who).Sight = 4
-              and then S.Turn > 400
-              and then S.Folk (Who).Belly.Full > 60
-              and then World.Group_Population (S, S.Folk (Who).Group) > 6
-              and then (Who + S.Turn) mod 80 = 0
+              and then not Needs_Food (S, S.Folk (Who).Group)
+              and then S.Folk (Who).Belly.Full > 50
+              and then (Who + S.Turn) mod 40 = 0
             then
                S.Folk (Who).Scout := True;
+               if S.Folk (Who).Group <= 2 and then S.Folk (Who).Sticks = 0 then
+                  S.Folk (Who).Sticks := 1;
+               elsif S.Folk (Who).Group > 2 and then S.Folk (Who).Stones = 0 then
+                  S.Folk (Who).Stones := 1;
+               end if;
             end if;
             if S.Folk (Who).Migrate in World.Group_Id then
                Best_X := Corners (S.Folk (Who).Migrate).X;
@@ -615,30 +795,32 @@ package body Island.Folk is
                end if;
             elsif S.Folk (Who).Scout then
                Note_Seen (S, Who);
-               Best_X := Corners (S.Folk (Who).Group).X;
-               Best_Y := Corners (S.Folk (Who).Group).Y;
-               if abs (Integer (S.Folk (Who).X) - Integer (Best_X))
-                    + abs (Integer (S.Folk (Who).Y) - Integer (Best_Y)) > 8
-                 and then (S.Turn mod 24) > 16
-               then
-                  Found := True;
-                  if abs (Integer (S.Folk (Who).X) - Integer (Best_X)) <= 1
-                    and then abs (Integer (S.Folk (Who).Y) - Integer (Best_Y)) <= 1
-                  then
-                     S.Folk (Who).Scout := False;
-                     Found := False;
-                  end if;
-               else
-                  declare
-                     Aim_X, Aim_Y : Coord;
-                  begin
-                     if Noted_Target (S, S.Folk (Who).Group, Aim_X, Aim_Y) then
-                        Best_X := Aim_X;
-                        Best_Y := Aim_Y;
-                        Found := True;
+               declare
+                  Which : constant Map.River_Index := S.Folk (Who).Group;
+                  Len   : constant Natural :=
+                    Map.River_Length (S.Island_Seed, Which);
+                  Near  : Natural := Natural'Last;
+                  Here  : Natural := 1;
+                  Spot  : Map.Spot;
+                  Ds    : Natural;
+               begin
+                  for Step in 1 .. Len loop
+                     Spot := Map.River_Step (S.Island_Seed, Which, Step);
+                     Ds := Dist (S.Folk (Who).X, S.Folk (Who).Y, Spot.X, Spot.Y);
+                     if Ds < Near then
+                        Near := Ds;
+                        Here := Step;
                      end if;
-                  end;
-               end if;
+                  end loop;
+                  if Here < Len then
+                     Spot := Map.River_Step (S.Island_Seed, Which, Here + 1);
+                     Best_X := Spot.X;
+                     Best_Y := Spot.Y;
+                     Found := True;
+                  else
+                     S.Folk (Who).Scout := False;
+                  end if;
+               end;
             end if;
             if Found then
                Seek (S, Who, Best_X, Best_Y);
@@ -917,6 +1099,13 @@ package body Island.Folk is
          S.Folk (A).Sticks := S.Folk (A).Sticks + 1;
          S.Folk (A).Food := S.Folk (A).Food - 1;
          S.Folk (B).Food := 1;
+      elsif S.Folk (A).Sticks >= 1 and then S.Folk (B).Stones >= 1
+        and then S.Folk (A).Stones = 0 and then S.Folk (B).Sticks = 0
+      then
+         S.Folk (A).Sticks := S.Folk (A).Sticks - 1;
+         S.Folk (B).Sticks := S.Folk (B).Sticks + 1;
+         S.Folk (B).Stones := S.Folk (B).Stones - 1;
+         S.Folk (A).Stones := S.Folk (A).Stones + 1;
       elsif S.Folk (B).Stones >= 2 and then S.Folk (A).Fish >= 1
         and then S.Folk (B).Fish = 0
       then
@@ -942,6 +1131,7 @@ package body Island.Folk is
                  and then Adjacent (S.Folk (A), S.Folk (B))
                then
                   Swap_Goods (S, A, B);
+                  S.Meetings := S.Meetings + 1;
                end if;
             end loop;
          end if;
@@ -974,6 +1164,162 @@ package body Island.Folk is
       end loop;
    end Choose_Migrants;
 
+   procedure Decay_Paths (S : in out World.State) is
+   begin
+      for I in World.Trail_Id loop
+         if S.Trails (I).Used then
+            if S.Trails (I).Strength <= 1 then
+               S.Trails (I).Used := False;
+               S.Trails (I).Strength := 0;
+            else
+               S.Trails (I).Strength := S.Trails (I).Strength - 1;
+            end if;
+         end if;
+      end loop;
+      for I in World.Road_Id loop
+         if S.Roads (I).Used then
+            if S.Roads (I).Life <= 1 then
+               S.Roads (I).Used := False;
+            else
+               S.Roads (I).Life := S.Roads (I).Life - 1;
+            end if;
+         end if;
+      end loop;
+   end Decay_Paths;
+
+   procedure Pave (S : in out World.State) is
+   begin
+      for T in World.Trail_Id loop
+         if S.Trails (T).Used and then S.Trails (T).Strength >= 8 then
+            for R in World.Road_Id loop
+               if not S.Roads (R).Used then
+                  S.Roads (R) :=
+                    (Used => True, X => S.Trails (T).X, Y => S.Trails (T).Y, Life => 24);
+                  S.Trails (T).Strength := 4;
+                  exit;
+               elsif S.Roads (R).X = S.Trails (T).X
+                 and then S.Roads (R).Y = S.Trails (T).Y
+               then
+                  exit;
+               end if;
+            end loop;
+         end if;
+      end loop;
+   end Pave;
+
+   procedure Open_Markets (S : in out World.State) is
+      Cross, Side, Down : Boolean;
+   begin
+      for A in World.Trail_Id loop
+         if S.Trails (A).Used and then S.Trails (A).Strength >= 4 then
+            Side := False;
+            Down := False;
+            for B in World.Trail_Id loop
+               if B /= A and then S.Trails (B).Used and then S.Trails (B).Strength >= 4
+                 and then abs (Integer (S.Trails (A).X) - Integer (S.Trails (B).X))
+                   + abs (Integer (S.Trails (A).Y) - Integer (S.Trails (B).Y)) = 1
+               then
+                  if S.Trails (A).Y = S.Trails (B).Y then
+                     Side := True;
+                  else
+                     Down := True;
+                  end if;
+               end if;
+            end loop;
+            Cross := Side and then Down;
+            if Cross then
+               for M in World.Market_Id loop
+                  if S.Markets (M).Used
+                    and then S.Markets (M).X = S.Trails (A).X
+                    and then S.Markets (M).Y = S.Trails (A).Y
+                  then
+                     Cross := False;
+                     exit;
+                  elsif not S.Markets (M).Used then
+                     S.Markets (M) :=
+                       (Used => True, X => S.Trails (A).X, Y => S.Trails (A).Y,
+                        others => <>);
+                     exit;
+                  end if;
+               end loop;
+            end if;
+         end if;
+      end loop;
+   end Open_Markets;
+
+   procedure Shop (S : in out World.State; Who : World.Folk_Id; Did : out Boolean) is
+   begin
+      Did := False;
+      for M in World.Market_Id loop
+         if S.Markets (M).Used
+           and then abs (Integer (S.Markets (M).X) - Integer (S.Folk (Who).X)) <= 1
+           and then abs (Integer (S.Markets (M).Y) - Integer (S.Folk (Who).Y)) <= 1
+         then
+            if S.Folk (Who).Sticks >= 1 and then S.Folk (Who).Stones = 0
+              and then S.Markets (M).Stones >= 1
+            then
+               S.Folk (Who).Sticks := S.Folk (Who).Sticks - 1;
+               S.Markets (M).Sticks := S.Markets (M).Sticks + 1;
+               S.Markets (M).Stones := S.Markets (M).Stones - 1;
+               S.Folk (Who).Stones := S.Folk (Who).Stones + 1;
+               Did := True;
+            elsif S.Folk (Who).Food >= 1 and then S.Folk (Who).Sticks = 0
+              and then S.Markets (M).Sticks >= 1
+            then
+               S.Folk (Who).Food := S.Folk (Who).Food - 1;
+               S.Markets (M).Berries := S.Markets (M).Berries + 1;
+               S.Markets (M).Sticks := S.Markets (M).Sticks - 1;
+               S.Folk (Who).Sticks := 1;
+               Did := True;
+            elsif S.Folk (Who).Sticks >= 1 and then S.Markets (M).Sticks < 4 then
+               S.Folk (Who).Sticks := S.Folk (Who).Sticks - 1;
+               S.Markets (M).Sticks := S.Markets (M).Sticks + 1;
+               Did := True;
+            end if;
+            if Did then
+               S.Markets (M).Trades := S.Markets (M).Trades + 1;
+               S.Groups (S.Folk (Who).Group).Trades :=
+                 S.Groups (S.Folk (Who).Group).Trades + 1;
+               if S.Markets (M).Trades = 4 then
+                  for H in World.Home_Id loop
+                     if not S.Homes (H).Used then
+                        S.Homes (H) :=
+                          (Used => True, Kind => World.Hut,
+                           Group => S.Folk (Who).Group,
+                           X => S.Markets (M).X, Y => S.Markets (M).Y,
+                           Capacity => World.Home_Capacity, others => <>);
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+               return;
+            end if;
+         end if;
+      end loop;
+   end Shop;
+
+   procedure Market_Deal
+     (S : in out World.State; Who : World.Folk_Id; Did : out Boolean)
+   is
+   begin
+      if not S.Markets (1).Used then
+         S.Markets (1) :=
+           (Used => True, X => S.Folk (Who).X, Y => S.Folk (Who).Y,
+            Stones => 1, others => <>);
+      end if;
+      Shop (S, Who, Did);
+   end Market_Deal;
+
+   procedure Leave_Scent (S : in out World.State; X, Y : Coord) is
+   begin
+      Stamp (S, X, Y);
+   end Leave_Scent;
+
+   function Scent (S : World.State; X, Y : Coord) return Natural is
+   begin
+      return Trail_Of (S, X, Y);
+   end Scent;
+
    procedure After_Actions (S : in out World.State; Turns : Positive) is
       Slot : Integer;
       Bred : array (World.Folk_Id) of Boolean := [others => False];
@@ -983,7 +1329,8 @@ package body Island.Folk is
            and then not S.Folk (Who).Belly.Collapsed
          then
             Stomach.Tick
-              (S.Folk (Who).Belly, 1, False, Positive (S.Folk (Who).Metabolism));
+              (S.Folk (Who).Belly, 1, False,
+               (if S.Folk (Who).Metabolism = 3 then 2 else 1));
          end if;
       end loop;
       for Who in World.Folk_Id loop
@@ -991,6 +1338,16 @@ package body Island.Folk is
             S.Folk (Who).Age := S.Folk (Who).Age + Natural (Turns);
             if S.Folk (Who).Age >= World.Adult_Age then
                S.Folk (Who).Home := 0;
+            end if;
+            if S.Folk (Who).Thirst < 100 then
+               S.Folk (Who).Thirst := S.Folk (Who).Thirst + 1;
+            end if;
+            if Map.Drinkable (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y) then
+               S.Folk (Who).Thirst := 0;
+            elsif S.Folk (Who).Thirst >= 100
+              and then S.Folk (Who).Belly.Full > 0
+            then
+               S.Folk (Who).Belly.Full := S.Folk (Who).Belly.Full - 1;
             end if;
             if S.Folk (Who).Cool > 0 then
                if S.Folk (Who).Cool > Natural (Turns) then
@@ -1001,6 +1358,18 @@ package body Island.Folk is
             end if;
          end if;
       end loop;
+      Decay_Paths (S);
+      Pave (S);
+      Open_Markets (S);
+      declare
+         Did : Boolean;
+      begin
+         for Who in World.Folk_Id loop
+            if S.Folk (Who).Alive then
+               Shop (S, Who, Did);
+            end if;
+         end loop;
+      end;
       Meetings (S);
       for A in World.Folk_Id loop
          if S.Folk (A).Alive and then not Bred (A)

@@ -108,6 +108,8 @@
     <li><span class="swatch" style="background:#c47b12"></span>group 2</li>
     <li><span class="swatch" style="background:#2d6a3a"></span>group 3</li>
     <li><span class="swatch" style="background:#8d1d2c"></span>group 4</li>
+    <li><span class="swatch" style="background:#1b1916"></span>trades</li>
+    <li><span class="swatch" style="background:#7e7a74"></span>migrants</li>
   </ul>
   <div class="row">
     <label for="islandSeed">Island <input id="islandSeed" type="number" min="0" max="2147483647" value="539365668"></label>
@@ -257,6 +259,11 @@ function groupSnapshot() {
       births: ada.island_group_births(g),
       deaths: ada.island_group_deaths(g),
       homes: ada.island_group_homes(g),
+      trades: ada.island_group_trades(g),
+      migrantsIn: ada.island_group_in(g),
+      migrantsOut: ada.island_group_out(g),
+      trust: [1, 2, 3, 4].map((other) => other === g ? 0 : ada.island_group_trust(g, other)),
+      alleles: [1, 2, 3, 4, 5].map((gene) => ada.island_group_allele(g, gene)),
       speed: ada.island_group_avg(g, 1),
       sight: ada.island_group_avg(g, 2),
       metabolism: ada.island_group_avg(g, 3),
@@ -266,6 +273,13 @@ function groupSnapshot() {
     });
   }
   return groups;
+}
+function chartRow() {
+  const groups = groupSnapshot();
+  const row = groups.map((g) => g.population);
+  row.push(groups.reduce((sum, g) => sum + g.trades, 0));
+  row.push(groups.reduce((sum, g) => sum + g.migrantsIn, 0));
+  return row;
 }
 function showInspect() {
   if (selectedHome && ada.island_home_used(selectedHome)) {
@@ -280,6 +294,10 @@ function showInspect() {
     inspect.textContent = kind + " of group " + ada.island_home_group(selectedHome)
       + " at " + ada.island_home_x(selectedHome) + "," + ada.island_home_y(selectedHome)
       + ". Residents " + ada.island_home_residents(selectedHome)
+      + ". Store berries " + ada.island_home_store(selectedHome, 1)
+      + ", fish " + ada.island_home_store(selectedHome, 2)
+      + ", sticks " + ada.island_home_store(selectedHome, 3)
+      + ", stones " + ada.island_home_store(selectedHome, 4)
       + ". " + (names.length ? names.join("; ") : "No one is inside.");
     return;
   }
@@ -373,6 +391,15 @@ function draw() {
       const m = Math.max(2, view.scale * 0.55);
       ctx.fillRect(sx + (view.scale - m) / 2, sy + (view.scale - m) / 2, m, m);
     }
+    if (ada.island_folk_scout(i)) {
+      ctx.strokeStyle = "#fffdf8";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + 0.5, sy + 0.5, view.scale - 1, view.scale - 1);
+    }
+    if (ada.island_folk_marker(i)) {
+      ctx.fillStyle = "#f4f7f2";
+      ctx.fillRect(sx + view.scale * 0.4, sy + view.scale * 0.15, Math.max(2, view.scale * 0.2), Math.max(2, view.scale * 0.2));
+    }
     if (i === selected) {
       ctx.strokeStyle = "#fffdf8";
       ctx.lineWidth = 2;
@@ -400,7 +427,9 @@ function drawChart() {
     [1, "#143a5a", 40],
     [2, "#c47b12", 40],
     [3, "#2d6a3a", 40],
-    [4, "#8d1d2c", 40]
+    [4, "#8d1d2c", 40],
+    [5, "#1b1916", 80],
+    [6, "#7e7a74", 40]
   ];
   for (const [field, color, scale] of series) {
     ctx.strokeStyle = color;
@@ -526,7 +555,7 @@ function applySeeds(island, pop) {
   ada.island_reset_seeds(island, pop);
   selected = 0;
   selectedHome = 0;
-  chartGroups = [groupSnapshot().map((g) => g.population)];
+  chartGroups = [chartRow()];
   refreshHud();
   draw();
   drawChart();
@@ -537,7 +566,7 @@ function noteHistory() {
   const last = autoRun.history[autoRun.history.length - 1];
   if (last && last.turn === turn) return;
   const groups = groupSnapshot();
-  chartGroups.push(groups.map((g) => g.population));
+  chartGroups.push(chartRow());
   autoRun.history.push({
     turn: turn,
     population: ada.island_population(),

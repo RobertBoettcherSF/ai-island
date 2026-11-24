@@ -653,6 +653,12 @@ package body Island.Text is
                Add_Nat (B, S.Groups (G).Deaths);
                Add (B, ",""homes"":");
                Add_Nat (B, World.Group_Home_Count (S, G));
+               Add (B, ",""trades"":");
+               Add_Nat (B, S.Groups (G).Trades);
+               Add (B, ",""migrants_in"":");
+               Add_Nat (B, S.Groups (G).Migrants_In);
+               Add (B, ",""migrants_out"":");
+               Add_Nat (B, S.Groups (G).Migrants_Out);
                Add (B, ",""avg_speed"":");
                Add_Nat (B, World.Group_Average (S, G, 1));
                Add (B, ",""extinct"":");
@@ -768,6 +774,42 @@ package body Island.Text is
                   Add (B, """");
                end if;
                Add (B, ",""cmd"":""build""");
+               Close_Cmd;
+            end if;
+            Emit (Code = 1);
+         end;
+      elsif Same (Command (V1 .. V2), "trade") then
+         if Has then
+            Fail_Bad ("trade");
+            return;
+         end if;
+         declare
+            Code : Natural;
+         begin
+            Island.Folk.Player_Trade (S, Code);
+            Spend (False);
+            if As_Text then
+               if Code = 1 then
+                  Add (B, "You trade with the other group.");
+               elsif Code = 2 then
+                  Add (B, "Nobody from another group is beside you.");
+               else
+                  Add (B, "You have nothing to swap.");
+               end if;
+            else
+               Add (B, "{""ok"":");
+               if Code = 1 then
+                  Add (B, "true");
+               else
+                  Add (B, "false,""reason"":""");
+                  if Code = 2 then
+                     Add (B, "nobody here");
+                  else
+                     Add (B, "nothing to swap");
+                  end if;
+                  Add (B, """");
+               end if;
+               Add (B, ",""cmd"":""trade""");
                Close_Cmd;
             end if;
             Emit (Code = 1);

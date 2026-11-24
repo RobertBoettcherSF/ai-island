@@ -5,6 +5,7 @@ with Island.Stomach;
 package body Island.Folk is
    use type Stomach.Hunger;
    use type World.Pile_Kind;
+   use type World.Note_Kind;
 
    function Mix (Seed : Map.Seed_Value; A, B, C : Natural) return Natural is
       use Interfaces;
@@ -15,6 +16,74 @@ package body Island.Folk is
       H := H xor Shift_Right (H, 8);
       return Natural (H mod 97);
    end Mix;
+
+   function Mean (A, B : Natural) return Natural is
+   begin
+      return (A + B + 1) / 2;
+   end Mean;
+
+   procedure Express (C : in out World.Folk_Rec) is
+      Speed : Natural;
+      Sight : Natural;
+      Meta  : Natural;
+      Fert  : Natural;
+   begin
+      Speed := Mean (C.Sp_A, C.Sp_B);
+      if Speed < 1 then
+         Speed := 1;
+      elsif Speed > 3 then
+         Speed := 3;
+      end if;
+      Sight := 1 + Mean (C.Si_A, C.Si_B);
+      if Sight < 2 then
+         Sight := 2;
+      elsif Sight > 4 then
+         Sight := 4;
+      end if;
+      Meta := Mean (C.Me_A, C.Me_B);
+      if Meta < 1 then
+         Meta := 1;
+      elsif Meta > 3 then
+         Meta := 3;
+      end if;
+      Fert := Mean (C.Fe_A, C.Fe_B);
+      if Fert < 1 then
+         Fert := 1;
+      elsif Fert > 3 then
+         Fert := 3;
+      end if;
+      C.Speed := Speed;
+      C.Sight := Sight;
+      C.Metabolism := Meta;
+      C.Fertility := Fert;
+   end Express;
+
+   function Side (Seed, Index : Natural) return Natural is
+   begin
+      return Mix (Seed, Index, 9, 1) mod 2;
+   end Side;
+
+   function Inherit_Side (Seed, Index : Natural) return Natural is
+   begin
+      return Side (Seed, Index);
+   end Inherit_Side;
+
+   function Allele_Of (Pair_A, Pair_B, Pick : Natural) return Natural is
+   begin
+      if Pick = 0 then
+         return Pair_A;
+      end if;
+      return Pair_B;
+   end Allele_Of;
+
+   function Cross_Color
+     (Mother, Father : Color_Pair; Seed, Index : Natural) return Color_Pair
+   is
+   begin
+      return
+        (Left  => Allele_Of (Mother.Left, Mother.Right, Side (Seed, Index * 2)),
+         Right => Allele_Of (Father.Left, Father.Right, Side (Seed, Index * 2 + 1)));
+   end Cross_Color;
 
    function Occupied
      (S : World.State; X, Y : Coord; Except : Integer) return Boolean
@@ -62,14 +131,17 @@ package body Island.Folk is
       S.Folk (Who).Stones := 0;
       S.Folk (Who).Food := 0;
       S.Folk (Who).Cool := 0;
-      S.Folk (Who).Speed := 1 + Mix (S.Pop_Seed, Who, 1, 0) mod 3;
-      if S.Folk (Who).Speed = 1 then
-         S.Folk (Who).Metabolism := 1;
-      else
-         S.Folk (Who).Metabolism := 2;
-      end if;
-      S.Folk (Who).Sight := 2 + Mix (S.Pop_Seed, Who, 2, 0) mod 3;
-      S.Folk (Who).Fertility := 1 + Mix (S.Pop_Seed, Who, 3, 0) mod 3;
+      S.Folk (Who).Sp_A := 1 + Mix (S.Pop_Seed, Who, 1, 0) mod 3;
+      S.Folk (Who).Sp_B := S.Folk (Who).Sp_A;
+      S.Folk (Who).Si_A := 1 + Mix (S.Pop_Seed, Who, 2, 0) mod 3;
+      S.Folk (Who).Si_B := S.Folk (Who).Si_A;
+      S.Folk (Who).Me_A := 1;
+      S.Folk (Who).Me_B := 1;
+      S.Folk (Who).Fe_A := 1 + Mix (S.Pop_Seed, Who, 3, 0) mod 3;
+      S.Folk (Who).Fe_B := S.Folk (Who).Fe_A;
+      S.Folk (Who).Col_A := Mix (S.Pop_Seed, Who, 5, 0) mod 2;
+      S.Folk (Who).Col_B := Mix (S.Pop_Seed, Who, 6, 0) mod 2;
+      Express (S.Folk (Who));
    end Place_Adult;
 
    procedure Setup (S : in out World.State) is
@@ -81,6 +153,8 @@ package body Island.Folk is
       S.Homes := [others => <>];
       S.Piles := [others => <>];
       S.Groups := [others => <>];
+      S.Trust := [others => [others => 2]];
+      S.Notes := [others => [others => <>]];
       for I in World.Folk_Id loop
          S.Folk (I) := (others => <>);
          S.Folk (I).Alive := False;
@@ -91,16 +165,27 @@ package body Island.Folk is
          Belly => S.Belly,
          Age => 160,
          Speed => 1, Sight => 3, Metabolism => 1, Fertility => 2,
-         Cool => 0, Group => 1, Home => 0, Sticks => 0, Stones => 0, Food => 0);
+         Cool => 0, Group => 1, Home => 0, Sticks => 0, Stones => 0, Food => 0,
+         Fish => 0, Scout => False, Migrate => 0,
+         Sp_A => 1, Sp_B => 1, Si_A => 2, Si_B => 2,
+         Me_A => 1, Me_B => 1, Fe_A => 2, Fe_B => 2,
+         Col_A => 1, Col_B => 0);
       for G in World.Group_Id loop
          C := Corners (G);
          S.Homes (G) :=
            (Used => True, Kind => World.Cave, Group => G,
-            X => C.X, Y => C.Y, Capacity => World.Home_Capacity);
-         S.Piles (G) :=
-           (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 10);
-         S.Piles (World.Group_Id'Last + G) :=
-           (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 6);
+            X => C.X, Y => C.Y, Capacity => World.Home_Capacity, others => <>);
+         if G <= 2 then
+            S.Piles (G) :=
+              (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 12);
+            S.Piles (World.Group_Id'Last + G) :=
+              (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 2);
+         else
+            S.Piles (G) :=
+              (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 3);
+            S.Piles (World.Group_Id'Last + G) :=
+              (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 14);
+         end if;
          Place_Adult (S, N + 1, G, C.X + 1, C.Y);
          Place_Adult (S, N + 2, G, C.X, C.Y + 1);
          Place_Adult (S, N + 3, G, C.X + 1, C.Y + 1);
@@ -353,6 +438,18 @@ package body Island.Folk is
          then
             S.Folk (Who).Food := 1;
             World.Mark_Bush (S, Spot.X, Spot.Y);
+            for Other in World.Folk_Id loop
+               if S.Folk (Other).Alive
+                 and then S.Folk (Other).Group /= S.Folk (Who).Group
+                 and then abs (Integer (S.Folk (Other).X) - Integer (Spot.X)) <= 1
+                 and then abs (Integer (S.Folk (Other).Y) - Integer (Spot.Y)) <= 1
+               then
+                  if S.Trust (S.Folk (Who).Group) (S.Folk (Other).Group) > 0 then
+                     S.Trust (S.Folk (Who).Group) (S.Folk (Other).Group) :=
+                       S.Trust (S.Folk (Who).Group) (S.Folk (Other).Group) - 1;
+                  end if;
+               end if;
+            end loop;
             return;
          end if;
       end loop;
@@ -395,7 +492,7 @@ package body Island.Folk is
             S.Homes (H) :=
               (Used => True, Kind => World.Hut, Group => S.Folk (Who).Group,
                X => S.Folk (Who).X, Y => S.Folk (Who).Y,
-               Capacity => World.Home_Capacity);
+               Capacity => World.Home_Capacity, others => <>);
             S.Folk (Who).Sticks := S.Folk (Who).Sticks - 5;
             S.Folk (Who).Stones := S.Folk (Who).Stones - 3;
             Built := True;
@@ -403,6 +500,73 @@ package body Island.Folk is
          end if;
       end loop;
    end Build_Hut;
+
+   procedure Remember
+     (S : in out World.State; G : World.Group_Id; Kind : World.Note_Kind; X, Y : Coord)
+   is
+   begin
+      for I in World.Note_Id loop
+         if S.Notes (G) (I).Known
+           and then S.Notes (G) (I).X = X
+           and then S.Notes (G) (I).Y = Y
+         then
+            return;
+         end if;
+      end loop;
+      for I in World.Note_Id loop
+         if not S.Notes (G) (I).Known then
+            S.Notes (G) (I) := (Known => True, Kind => Kind, X => X, Y => Y);
+            return;
+         end if;
+      end loop;
+   end Remember;
+
+   procedure Note_Seen (S : in out World.State; Who : World.Folk_Id) is
+      G : constant World.Group_Id := S.Folk (Who).Group;
+      Spot : Map.Spot;
+   begin
+      for B in Map.Bush_Index loop
+         Spot := Map.Bush (S.Island_Seed, B);
+         if In_Sight (S.Folk (Who), Spot.X, Spot.Y) then
+            Remember (S, G, World.Note_Food, Spot.X, Spot.Y);
+         end if;
+      end loop;
+      for H in World.Home_Id loop
+         if S.Homes (H).Used
+           and then S.Homes (H).Group /= G
+           and then In_Sight (S.Folk (Who), S.Homes (H).X, S.Homes (H).Y)
+         then
+            Remember (S, G, World.Note_Home, S.Homes (H).X, S.Homes (H).Y);
+         end if;
+      end loop;
+      for P in World.Pile_Id loop
+         if S.Piles (P).Count > 0
+           and then In_Sight (S.Folk (Who), S.Piles (P).X, S.Piles (P).Y)
+         then
+            if S.Piles (P).Kind = World.Stick_Pile then
+               Remember (S, G, World.Note_Stick, S.Piles (P).X, S.Piles (P).Y);
+            else
+               Remember (S, G, World.Note_Stone, S.Piles (P).X, S.Piles (P).Y);
+            end if;
+         end if;
+      end loop;
+   end Note_Seen;
+
+   function Noted_Target
+     (S : World.State; G : World.Group_Id; X, Y : out Coord) return Boolean
+   is
+   begin
+      for I in World.Note_Id loop
+         if S.Notes (G) (I).Known and then S.Notes (G) (I).Kind = World.Note_Food then
+            X := S.Notes (G) (I).X;
+            Y := S.Notes (G) (I).Y;
+            return True;
+         end if;
+      end loop;
+      X := 0;
+      Y := 0;
+      return False;
+   end Noted_Target;
 
    procedure Others_Act (S : in out World.State) is
       Best      : Natural;
@@ -419,6 +583,68 @@ package body Island.Folk is
             if S.Folk (Who).Age < World.Adult_Age then
                goto Next_Folk;
             end if;
+            Found := False;
+            if S.Folk (Who).Sight = 4
+              and then S.Turn > 400
+              and then S.Folk (Who).Belly.Full > 60
+              and then World.Group_Population (S, S.Folk (Who).Group) > 6
+              and then (Who + S.Turn) mod 80 = 0
+            then
+               S.Folk (Who).Scout := True;
+            end if;
+            if S.Folk (Who).Migrate in World.Group_Id then
+               Best_X := Corners (S.Folk (Who).Migrate).X;
+               Best_Y := Corners (S.Folk (Who).Migrate).Y;
+               Found := True;
+               if abs (Integer (S.Folk (Who).X) - Integer (Best_X)) <= 1
+                 and then abs (Integer (S.Folk (Who).Y) - Integer (Best_Y)) <= 1
+                 and then World.Group_Population (S, S.Folk (Who).Group) > 2
+               then
+                  declare
+                     Origin : constant World.Group_Id := S.Folk (Who).Group;
+                     Dest   : constant World.Group_Id := S.Folk (Who).Migrate;
+                  begin
+                     S.Groups (Origin).Migrants_Out :=
+                       S.Groups (Origin).Migrants_Out + 1;
+                     S.Groups (Dest).Migrants_In := S.Groups (Dest).Migrants_In + 1;
+                     S.Groups (Dest).Came_From (Origin) :=
+                       S.Groups (Dest).Came_From (Origin) + 1;
+                     S.Folk (Who).Group := Dest;
+                     S.Folk (Who).Migrate := 0;
+                  end;
+               end if;
+            elsif S.Folk (Who).Scout then
+               Note_Seen (S, Who);
+               Best_X := Corners (S.Folk (Who).Group).X;
+               Best_Y := Corners (S.Folk (Who).Group).Y;
+               if abs (Integer (S.Folk (Who).X) - Integer (Best_X))
+                    + abs (Integer (S.Folk (Who).Y) - Integer (Best_Y)) > 8
+                 and then (S.Turn mod 24) > 16
+               then
+                  Found := True;
+                  if abs (Integer (S.Folk (Who).X) - Integer (Best_X)) <= 1
+                    and then abs (Integer (S.Folk (Who).Y) - Integer (Best_Y)) <= 1
+                  then
+                     S.Folk (Who).Scout := False;
+                     Found := False;
+                  end if;
+               else
+                  declare
+                     Aim_X, Aim_Y : Coord;
+                  begin
+                     if Noted_Target (S, S.Folk (Who).Group, Aim_X, Aim_Y) then
+                        Best_X := Aim_X;
+                        Best_Y := Aim_Y;
+                        Found := True;
+                     end if;
+                  end;
+               end if;
+            end if;
+            if Found then
+               Seek (S, Who, Best_X, Best_Y);
+               goto Next_Folk;
+            end if;
+            Found := False;
             Give_Food (S, Who);
             Take_Pile (S, Who);
             Hungry :=
@@ -447,8 +673,9 @@ package body Island.Folk is
                Take_Berry (S, Who);
                for B in Map.Bush_Index loop
                   if Bush_Ripe (S, B)
-                    and then In_Sight
-                      (S.Folk (Who), Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y)
+                    and then Dist
+                      (S.Folk (Who).X, S.Folk (Who).Y,
+                       Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y) <= 16
                   then
                      D := Dist
                        (S.Folk (Who).X, S.Folk (Who).Y,
@@ -557,44 +784,6 @@ package body Island.Folk is
       end loop;
    end Others_Act;
 
-   function Clamp_Speed (V : Integer) return World.Speed_T is
-   begin
-      if V < World.Speed_T'First then
-         return World.Speed_T'First;
-      elsif V > World.Speed_T'Last then
-         return World.Speed_T'Last;
-      else
-         return V;
-      end if;
-   end Clamp_Speed;
-
-   function Clamp_Sight (V : Integer) return World.Sight_T is
-   begin
-      if V < World.Sight_T'First then
-         return World.Sight_T'First;
-      elsif V > World.Sight_T'Last then
-         return World.Sight_T'Last;
-      else
-         return V;
-      end if;
-   end Clamp_Sight;
-
-   function Clamp_Fert (V : Integer) return World.Fert_T is
-   begin
-      if V < World.Fert_T'First then
-         return World.Fert_T'First;
-      elsif V > World.Fert_T'Last then
-         return World.Fert_T'Last;
-      else
-         return V;
-      end if;
-   end Clamp_Fert;
-
-   function Mut (S : World.State; A, B, Which : Natural) return Integer is
-   begin
-      return Integer (Mix (S.Pop_Seed, S.Turn + A, B, Which) mod 3) - 1;
-   end Mut;
-
    function Free_Home (S : World.State; G : World.Group_Id) return Natural is
    begin
       for H in World.Home_Id loop
@@ -613,7 +802,13 @@ package body Island.Folk is
    is
       Home : constant Natural := Free_Home (S, S.Folk (A).Group);
    begin
-      if Home = 0 or else S.Folk (A).Group /= S.Folk (B).Group then
+      if Home = 0 then
+         return;
+      end if;
+      if S.Folk (A).Group /= S.Folk (B).Group
+        and then (S.Trust (S.Folk (A).Group) (S.Folk (B).Group) < 6
+                  or else S.Trust (S.Folk (B).Group) (S.Folk (A).Group) < 6)
+      then
          return;
       end if;
       S.Folk (Slot).Alive := True;
@@ -627,14 +822,38 @@ package body Island.Folk is
       S.Folk (Slot).Sticks := 0;
       S.Folk (Slot).Stones := 0;
       S.Folk (Slot).Food := 0;
+      S.Folk (Slot).Fish := 0;
+      S.Folk (Slot).Scout := False;
+      S.Folk (Slot).Migrate := 0;
       S.Folk (Slot).Belly := (Full => 60, Empty_For => 0, Collapsed => False);
-      S.Folk (Slot).Speed := Clamp_Speed
-        ((S.Folk (A).Speed + S.Folk (B).Speed) / 2 + Mut (S, A, B, 1));
-      S.Folk (Slot).Sight := Clamp_Sight
-        ((S.Folk (A).Sight + S.Folk (B).Sight) / 2 + Mut (S, A, B, 2));
-      S.Folk (Slot).Metabolism := 1;
-      S.Folk (Slot).Fertility := Clamp_Fert
-        ((S.Folk (A).Fertility + S.Folk (B).Fertility) / 2 + Mut (S, A, B, 3));
+      declare
+         N : constant Natural := S.Turn + A * 30 + B;
+      begin
+         S.Folk (Slot).Sp_A :=
+           Allele_Of (S.Folk (A).Sp_A, S.Folk (A).Sp_B, Side (S.Pop_Seed, N));
+         S.Folk (Slot).Sp_B :=
+           Allele_Of (S.Folk (B).Sp_A, S.Folk (B).Sp_B, Side (S.Pop_Seed, N + 1));
+         S.Folk (Slot).Si_A :=
+           Allele_Of (S.Folk (A).Si_A, S.Folk (A).Si_B, Side (S.Pop_Seed, N + 2));
+         S.Folk (Slot).Si_B :=
+           Allele_Of (S.Folk (B).Si_A, S.Folk (B).Si_B, Side (S.Pop_Seed, N + 3));
+         S.Folk (Slot).Me_A :=
+           Allele_Of (S.Folk (A).Me_A, S.Folk (A).Me_B, Side (S.Pop_Seed, N + 4));
+         S.Folk (Slot).Me_B :=
+           Allele_Of (S.Folk (B).Me_A, S.Folk (B).Me_B, Side (S.Pop_Seed, N + 5));
+         S.Folk (Slot).Fe_A :=
+           Allele_Of (S.Folk (A).Fe_A, S.Folk (A).Fe_B, Side (S.Pop_Seed, N + 6));
+         S.Folk (Slot).Fe_B :=
+           Allele_Of (S.Folk (B).Fe_A, S.Folk (B).Fe_B, Side (S.Pop_Seed, N + 7));
+         S.Folk (Slot).Col_A :=
+           Allele_Of (S.Folk (A).Col_A, S.Folk (A).Col_B, Side (S.Pop_Seed, N + 8));
+         S.Folk (Slot).Col_B :=
+           Allele_Of (S.Folk (B).Col_A, S.Folk (B).Col_B, Side (S.Pop_Seed, N + 9));
+         if Mix (S.Pop_Seed, N, 8, 2) mod 32 = 0 then
+            S.Folk (Slot).Sp_A := 1 + (S.Folk (Slot).Sp_A mod 3);
+         end if;
+      end;
+      Express (S.Folk (Slot));
       S.Folk (A).Belly.Full :=
         Stomach.Fullness (Natural (S.Folk (A).Belly.Full) - 30);
       S.Folk (B).Belly.Full :=
@@ -661,6 +880,99 @@ package body Island.Folk is
       return abs (Integer (A.X) - Integer (B.X)) <= 1
         and then abs (Integer (A.Y) - Integer (B.Y)) <= 1;
    end Adjacent;
+
+   procedure Raise_Trust (S : in out World.State; A, B : World.Group_Id) is
+   begin
+      if A = B then
+         return;
+      end if;
+      if S.Trust (A) (B) < World.Trust_Max then
+         S.Trust (A) (B) := S.Trust (A) (B) + 1;
+      end if;
+      if S.Trust (B) (A) < World.Trust_Max then
+         S.Trust (B) (A) := S.Trust (B) (A) + 1;
+      end if;
+   end Raise_Trust;
+
+   procedure Swap_Goods (S : in out World.State; A, B : World.Folk_Id) is
+   begin
+      if S.Folk (A).Sticks >= 2 and then S.Folk (B).Food >= 1
+        and then S.Folk (A).Food = 0
+      then
+         S.Folk (A).Sticks := S.Folk (A).Sticks - 1;
+         S.Folk (B).Sticks := S.Folk (B).Sticks + 1;
+         S.Folk (B).Food := S.Folk (B).Food - 1;
+         S.Folk (A).Food := 1;
+      elsif S.Folk (A).Stones >= 2 and then S.Folk (B).Food >= 1
+        and then S.Folk (A).Food = 0
+      then
+         S.Folk (A).Stones := S.Folk (A).Stones - 1;
+         S.Folk (B).Stones := S.Folk (B).Stones + 1;
+         S.Folk (B).Food := S.Folk (B).Food - 1;
+         S.Folk (A).Food := 1;
+      elsif S.Folk (B).Sticks >= 2 and then S.Folk (A).Food >= 1
+        and then S.Folk (B).Food = 0
+      then
+         S.Folk (B).Sticks := S.Folk (B).Sticks - 1;
+         S.Folk (A).Sticks := S.Folk (A).Sticks + 1;
+         S.Folk (A).Food := S.Folk (A).Food - 1;
+         S.Folk (B).Food := 1;
+      elsif S.Folk (B).Stones >= 2 and then S.Folk (A).Fish >= 1
+        and then S.Folk (B).Fish = 0
+      then
+         S.Folk (B).Stones := S.Folk (B).Stones - 1;
+         S.Folk (A).Stones := S.Folk (A).Stones + 1;
+         S.Folk (A).Fish := S.Folk (A).Fish - 1;
+         S.Folk (B).Fish := 1;
+      else
+         return;
+      end if;
+      Raise_Trust (S, S.Folk (A).Group, S.Folk (B).Group);
+      S.Groups (S.Folk (A).Group).Trades := S.Groups (S.Folk (A).Group).Trades + 1;
+      S.Groups (S.Folk (B).Group).Trades := S.Groups (S.Folk (B).Group).Trades + 1;
+   end Swap_Goods;
+
+   procedure Meetings (S : in out World.State) is
+   begin
+      for A in World.Folk_Id loop
+         if S.Folk (A).Alive and then S.Folk (A).Age >= World.Adult_Age then
+            for B in World.Folk_Id loop
+               if B > A and then S.Folk (B).Alive
+                 and then S.Folk (B).Group /= S.Folk (A).Group
+                 and then Adjacent (S.Folk (A), S.Folk (B))
+               then
+                  Swap_Goods (S, A, B);
+               end if;
+            end loop;
+         end if;
+      end loop;
+   end Meetings;
+
+   procedure Choose_Migrants (S : in out World.State) is
+   begin
+      for Who in World.Folk_Id loop
+         if S.Folk (Who).Alive
+           and then S.Folk (Who).Age >= World.Adult_Age
+           and then S.Folk (Who).Migrate = 0
+           and then (Who + S.Turn) mod 90 = 0
+           and then World.Group_Population (S, S.Folk (Who).Group) > 2
+           and then
+             (World.Group_Population (S, S.Folk (Who).Group) < 4
+              or else not Space_For (S, S.Folk (Who).Group))
+         then
+            for G in World.Group_Id loop
+               if G /= S.Folk (Who).Group
+                 and then S.Trust (S.Folk (Who).Group) (G) >= 6
+                 and then Space_For (S, G)
+                 and then World.Group_Population (S, G) >= 4
+               then
+                  S.Folk (Who).Migrate := G;
+                  exit;
+               end if;
+            end loop;
+         end if;
+      end loop;
+   end Choose_Migrants;
 
    procedure After_Actions (S : in out World.State; Turns : Positive) is
       Slot : Integer;
@@ -689,6 +1001,7 @@ package body Island.Folk is
             end if;
          end if;
       end loop;
+      Meetings (S);
       for A in World.Folk_Id loop
          if S.Folk (A).Alive and then not Bred (A)
            and then S.Folk (A).Age >= World.Adult_Age
@@ -698,7 +1011,10 @@ package body Island.Folk is
          then
             for B in World.Folk_Id loop
                if B > A and then S.Folk (B).Alive and then not Bred (B)
-                 and then S.Folk (B).Group = S.Folk (A).Group
+                 and then
+                   (S.Folk (B).Group = S.Folk (A).Group
+                    or else (S.Trust (S.Folk (A).Group) (S.Folk (B).Group) >= 6
+                             and then S.Trust (S.Folk (B).Group) (S.Folk (A).Group) >= 6))
                  and then S.Folk (B).Age >= World.Adult_Age
                  and then S.Folk (B).Belly.Full > 70
                  and then S.Folk (B).Cool = 0
@@ -716,6 +1032,7 @@ package body Island.Folk is
             end loop;
          end if;
       end loop;
+      Choose_Migrants (S);
       for Who in World.Folk_Id loop
          if S.Folk (Who).Alive
            and then (S.Folk (Who).Belly.Collapsed
@@ -885,6 +1202,29 @@ package body Island.Folk is
          Result := 3;
       end if;
    end Player_Feed;
+
+   procedure Player_Trade (S : in out World.State; Result : out Natural) is
+      Who : constant World.Folk_Id := World.Player_Id;
+      Before : Natural;
+   begin
+      Sync_Player (S);
+      Result := 2;
+      Before := S.Groups (S.Folk (Who).Group).Trades;
+      for Other in World.Folk_Id loop
+         if Other /= Who and then S.Folk (Other).Alive
+           and then S.Folk (Other).Group /= S.Folk (Who).Group
+           and then Adjacent (S.Folk (Who), S.Folk (Other))
+         then
+            Swap_Goods (S, Who, Other);
+            if S.Groups (S.Folk (Who).Group).Trades > Before then
+               Result := 1;
+            else
+               Result := 3;
+            end if;
+            return;
+         end if;
+      end loop;
+   end Player_Trade;
 
 begin
    null;

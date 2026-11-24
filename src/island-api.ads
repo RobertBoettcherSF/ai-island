@@ -179,4 +179,29 @@ package Island.API is
    function Folk_Home (Id : Integer) return Integer
      with Export, Convention => C, External_Name => "island_folk_home";
 
+   function Folk_Scout (Id : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_folk_scout";
+
+   function Folk_Marker (Id : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_folk_marker";
+
+   function Group_Trust (A, B : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_trust";
+
+   function Group_Trades (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_trades";
+
+   function Group_In (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_in";
+
+   function Group_Out (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_out";
+
+   --  Gene 1..4 quantitative high-allele share, 5 colour dominant share, in thousandths.
+   function Group_Allele (G, Gene : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_allele";
+
+   function Home_Store (H, Kind : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_home_store";
+
 end Island.API;

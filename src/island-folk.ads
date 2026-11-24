@@ -34,4 +34,21 @@ package Island.Folk is
      with Pre => World.Valid (S),
           Post => World.Valid (S);
 
+   --  1 traded, 2 nobody here, 3 nothing to swap.
+   procedure Player_Trade (S : in out World.State; Result : out Natural)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
+   --  Colour alleles are 0 (recessive) or 1 (dominant).
+   type Color_Pair is record
+      Left  : Natural := 0;
+      Right : Natural := 0;
+   end record;
+
+   --  Deterministic allele pick. Same seed and index always choose the same side.
+   function Inherit_Side (Seed, Index : Natural) return Natural;
+
+   function Cross_Color
+     (Mother, Father : Color_Pair; Seed, Index : Natural) return Color_Pair;
+
 end Island.Folk;

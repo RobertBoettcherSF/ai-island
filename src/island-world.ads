@@ -5,7 +5,35 @@ with Island.Stomach;
 
 package Island.World is
 
-   Save_Max : constant := 512;
+   Save_Max : constant := 4096;
+
+   Max_Folk : constant := 36;
+   subtype Folk_Id is Integer range 1 .. Max_Folk;
+   Player_Id : constant Folk_Id := 1;
+   Npc_Count : constant := 12;
+   Adult_Age : constant := 40;
+   Max_Age : constant := 360;
+
+   subtype Speed_T is Integer range 1 .. 3;
+   subtype Sight_T is Integer range 2 .. 4;
+   subtype Meta_T is Integer range 1 .. 3;
+   subtype Fert_T is Integer range 1 .. 3;
+
+   type Folk_Rec is record
+      Alive      : Boolean := False;
+      X          : Coord := 0;
+      Y          : Coord := 0;
+      Facing     : Direction := North;
+      Belly      : Stomach.Levels;
+      Age        : Natural := 0;
+      Speed      : Speed_T := 1;
+      Sight      : Sight_T := 3;
+      Metabolism : Meta_T := 1;
+      Fertility  : Fert_T := 2;
+      Cool       : Natural := 0;
+   end record;
+
+   type Folk_Array is array (Folk_Id) of Folk_Rec;
 
    type Object_Rec is record
       Kind      : Object_Kind := Stone;
@@ -32,6 +60,9 @@ package Island.World is
       Belly      : Stomach.Levels;
       Turn       : Natural := 0;
       Bush_Eaten : Bush_Times := [others => 0];
+      Folk       : Folk_Array;
+      Births     : Natural := 0;
+      Deaths     : Natural := 0;
    end record;
 
    function Valid (S : State) return Boolean;
@@ -116,6 +147,7 @@ package Island.World is
           Post => Valid (S);
 
    --  One action. A move that started while weak advances two turns.
+   --  The other creatures act in the same step.
    procedure Advance
      (S        : in out State;
       Is_Move  : Boolean;
@@ -123,6 +155,16 @@ package Island.World is
       Carrying : Boolean)
      with Pre => Valid (S) and then not S.Belly.Collapsed,
           Post => Valid (S) and then S.Turn > S'Old.Turn;
+
+   --  Every creature, including the player, uses the built-in brain.
+   procedure Simulate (S : in out State; Turns : Positive)
+     with Pre => Valid (S),
+          Post => Valid (S);
+
+   function Alive_Count (S : State) return Natural;
+
+   subtype Trait_Query is Integer range 1 .. 4;
+   function Average_Milli (S : State; Which : Trait_Query) return Natural;
 
    --  Versioned text image of the state. The native runner writes the bytes;
    --  this package does not open a file.

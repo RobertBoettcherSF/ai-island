@@ -1,18 +1,25 @@
--- Fixed island. Terrain is a function of the coordinates, so a save file
--- only has to remember the agent and the objects.
+-- Fixed island from one seed. Terrain is a function of the coordinates,
+-- so a save file does not store the ground.
+with Interfaces;
+
 package Island.Map is
 
-   Start_X : constant Coord := 16;
-   Start_Y : constant Coord := 16;
-   Stone_X : constant Coord := 16;
-   Stone_Y : constant Coord := 15;
-   Stick_X : constant Coord := 18;
-   Stick_Y : constant Coord := 16;
-   Shell_X : constant Coord := 16;
-   Shell_Y : constant Coord := 27;
-   --  North beach. The scripted walk picks up the stone and places it here.
-   Beach_X : constant Coord := 16;
-   Beach_Y : constant Coord := 4;
+   Seed : constant Interfaces.Unsigned_32 := 16#2026_1124#;
+
+   Start_X : constant Coord := 48;
+   Start_Y : constant Coord := 48;
+   Stone_X : constant Coord := 47;
+   Stone_Y : constant Coord := 48;
+   Stick_X : constant Coord := 49;
+   Stick_Y : constant Coord := 48;
+   Shell_X : constant Coord := 48;
+   Shell_Y : constant Coord := 50;
+   --  The smoke walk stands on 48,47 facing north and eats this bush.
+   Berry_X : constant Coord := 48;
+   Berry_Y : constant Coord := 46;
+   --  Pond fish, west of the start. Stand on 46,48 facing west.
+   Pond_X : constant Coord := 45;
+   Pond_Y : constant Coord := 48;
 
    type Placed is record
       Kind : Object_Kind;
@@ -29,12 +36,15 @@ package Island.Map is
 
    function Walkable (Ground : Terrain) return Boolean;
 
-   --  Water that touches sand. Fish live in a few of these cells.
    function Shallow (X, Y : Coord) return Boolean;
 
-   Bush_Count : constant := 4;
+   Grove_Count : constant := 8;
+   subtype Grove_Index is Integer range 1 .. Grove_Count;
+   Bushes_Per_Grove : constant := 8;
+   Bush_Count : constant := Grove_Count * Bushes_Per_Grove;
    subtype Bush_Index is Integer range 1 .. Bush_Count;
-   Fish_Count : constant := 3;
+
+   Fish_Count : constant := 4;
    subtype Fish_Index is Integer range 1 .. Fish_Count;
 
    type Spot is record
@@ -42,25 +52,28 @@ package Island.Map is
       Y : Coord;
    end record;
 
-   --  Spread across the island, not only north of the start.
-   --  Bush 1 is the short smoke walk: stand at 17,15 facing east.
-   Bushes : constant array (Bush_Index) of Spot :=
-     [1 => (X => 18, Y => 15),
-      2 => (X => 12, Y => 22),
-      3 => (X => 24, Y => 12),
-      4 => (X => 14, Y => 24)];
+   Groves : constant array (Grove_Index) of Spot :=
+     [1 => (X => 20, Y => 20),
+      2 => (X => 20, Y => 74),
+      3 => (X => 76, Y => 20),
+      4 => (X => 76, Y => 74),
+      5 => (X => 51, Y => 46),
+      6 => (X => 70, Y => 36),
+      7 => (X => 36, Y => 74),
+      8 => (X => 62, Y => 78)];
 
-   Fish : constant array (Fish_Index) of Spot :=
-     [1 => (X => 30, Y => 17),
-      2 => (X => 1, Y => 22),
-      3 => (X => 12, Y => 30)];
+   function Bush (I : Bush_Index) return Spot;
+
+   function Fish_At (I : Fish_Index) return Spot;
+
+   Npc_Total : constant := 12;
+   subtype Npc_Index is Integer range 1 .. Npc_Total;
+   function Npc_Home (N : Npc_Index) return Spot;
 
    Berry_Gain   : constant := 25;
    Fish_Gain    : constant := 40;
-   Regrow_Turns : constant := 40;
+   Regrow_Turns : constant := 10;
 
-   --  True when the fixed map still matches the walk the browser Auto button
-   --  performs: north from the start, through the stone, onto the beach.
    function Layout_Ok return Boolean;
 
 end Island.Map;

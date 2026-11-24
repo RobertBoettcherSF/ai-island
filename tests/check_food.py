@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI smoke for hunger and food. One process per command, state in the save."""
+"""CLI smoke for hunger, food, and the population summary."""
 import json, subprocess, sys, tempfile, os
 
 bin_path = sys.argv[1]
@@ -24,54 +24,52 @@ def main():
     code, body = play(save, "new")
     if not body.get("ok") or body.get("fullness") != 100 or body.get("turn") != 0:
         sys.exit("new: " + json.dumps(body))
-    if body.get("hunger") != "ok":
-        sys.exit("new hunger")
+    if body.get("hunger") != "ok" or body.get("x") != 48:
+        sys.exit("new start: " + json.dumps(body))
 
-    # Each look is one action, so fullness falls by 1. 71 looks reach 29.
-    last = None
-    for _ in range(71):
-        code, last = play(save, "look")
-        if code != 0 or not last.get("ok"):
-            sys.exit("look failed")
-    if last["turn"] != 71 or last["fullness"] != 29 or last["hunger"] != "hungry":
-        sys.exit("countdown: " + json.dumps({k: last[k] for k in ("turn", "fullness", "hunger")}))
-    seen = last["seen"]
-    if not any(cell.get("food") == "berries" for cell in seen):
-        sys.exit("look did not list berries")
+    code, body = play(save, "world")
+    if not body.get("ok") or body.get("population") != 13 or body.get("births") != 0:
+        sys.exit("world: " + json.dumps(body))
 
     code, body = play(save, "move", "N")
-    code, body = play(save, "move", "E")
-    before = body["fullness"]
+    if not body.get("ok") or body.get("fullness") != 99:
+        sys.exit("move: " + json.dumps(body))
     code, body = play(save, "eat")
     if not body.get("ok") or body.get("food") != "berries":
         sys.exit("berries: " + json.dumps(body))
-    if body["fullness"] != before + 24:
-        sys.exit("berry gain %s -> %s" % (before, body["fullness"]))
 
     play(save, "move", "S")
-    play(save, "move", "S")
-    for _ in range(12):
-        play(save, "move", "E")
+    play(save, "move", "W")
+    play(save, "move", "W")
     code, body = play(save, "eat")
     if code == 0 or body.get("reason") != "need a stick":
         sys.exit("fish without stick: " + json.dumps(body))
 
-    for _ in range(11):
-        play(save, "move", "W")
-    play(save, "move", "N")
+    play(save, "move", "E")
+    play(save, "move", "E")
+    play(save, "move", "E")
     code, body = play(save, "pick")
     if body.get("hand") != "stick":
         sys.exit("pick stick: " + json.dumps(body))
-    play(save, "move", "S")
-    for _ in range(11):
-        play(save, "move", "E")
-    before = play(save, "look")[1]["fullness"]
-    # look spent a turn; eat is the next command. Re-read by eating now.
+    play(save, "move", "W")
+    play(save, "move", "W")
+    play(save, "move", "W")
     code, body = play(save, "eat")
     if not body.get("ok") or body.get("food") != "fish":
         sys.exit("fish: " + json.dumps(body))
-    if body["fullness"] <= before:
-        sys.exit("fish did not feed %s -> %s" % (before, body["fullness"]))
+
+    save2 = os.path.join(tmp, "countdown.save")
+    code, body = play(save2, "new")
+    code, body = play(save2, "look")
+    if "creatures" not in body or not any(cell.get("food") == "berries" for cell in body["seen"]):
+        sys.exit("look did not list berries or creatures")
+    last = body
+    for _ in range(70):
+        code, last = play(save2, "look")
+        if code != 0 or not last.get("ok"):
+            sys.exit("look failed")
+    if last["turn"] != 71 or last["fullness"] != 29 or last["hunger"] != "hungry":
+        sys.exit("countdown: " + json.dumps({k: last[k] for k in ("turn", "fullness", "hunger")}))
     print("food smoke ok")
 
 

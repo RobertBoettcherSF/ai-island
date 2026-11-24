@@ -27,10 +27,16 @@ package Island.Stomach is
    function Is_Weak (L : Levels) return Boolean
      with Pre => Levels_Ok (L);
 
-   --  One action. Hunger falls by 1, or by 2 while carrying. Turns is how
+   --  One action. Hunger falls by Drain, plus one more while carrying.
+   --  Drain 1 is the original rule (1, or 2 while carrying). Turns is how
    --  many world turns that action took (a weak move takes two).
-   procedure Tick (L : in out Levels; Turns : Positive; Carrying : Boolean)
-     with Pre => Levels_Ok (L) and then not L.Collapsed,
+   procedure Tick
+     (L        : in out Levels;
+      Turns    : Positive;
+      Carrying : Boolean;
+      Drain    : Positive := 1)
+     with Pre =>
+       Levels_Ok (L) and then not L.Collapsed and then Drain <= 6,
           Post => Levels_Ok (L) and then L.Full <= L'Old.Full;
 
    procedure Feed (L : in out Levels; Amount : Natural)

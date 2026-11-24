@@ -63,16 +63,21 @@ async function check(page, label) {
     return t.startsWith("Auto: pass") || t.startsWith("Auto: fail");
   }, {timeout: 40000});
   const result = await page.$eval("#autoResult", (el) => el.textContent);
-  if (result !== "Auto: pass") throw new Error(label + " " + result);
+  if (!result.startsWith("Auto: pass")) throw new Error(label + " " + result);
   const report = await page.evaluate(() => window.aiIslandReport());
   if (report.auto !== "pass") throw new Error(label + " report auto " + report.auto);
   if (report.version !== stamp) throw new Error(label + " report version");
   if (!report.browser) throw new Error(label + " report has no browser");
-  if (!Array.isArray(report.commands) || report.commands.length < 5) {
+  if (!Array.isArray(report.commands) || report.commands.length < 1) {
     throw new Error(label + " report commands");
   }
+  if (!(report.population > 0)) throw new Error(label + " population " + report.population);
+  if (typeof report.births !== "number" || typeof report.deaths !== "number") {
+    throw new Error(label + " missing births or deaths");
+  }
+  if (!(report.per100Ms > 0)) throw new Error(label + " missing 100x timing");
+  console.log(label + " " + result);
   if (errors.length) throw new Error(label + " console " + errors.join(" | "));
-  console.log(label + " Auto: pass");
 }
 
 const server = await serve();

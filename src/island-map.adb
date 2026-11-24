@@ -1,28 +1,76 @@
 package body Island.Map is
 
-   function Terrain_At (X, Y : Coord) return Terrain is
+   function Hash (X, Y : Coord) return Natural is
+      use Interfaces;
+      H : Unsigned_32 := Seed xor 16#9E37_79B9#;
    begin
-      --  Water is a full border inside the grid, so a step off the beach is
-      --  blocked and stays in range.
-      if X <= 1 or else X >= 30 or else Y <= 1 or else Y >= 30 then
+      H := H xor Unsigned_32 (X) * 16#85EB_CA6B#;
+      H := H xor Shift_Right (H, 13);
+      H := H xor Unsigned_32 (Y) * 16#C2B2_AE35#;
+      H := H xor Shift_Right (H, 16);
+      return Natural (H mod 1024);
+   end Hash;
+
+   function In_Lake (X, Y : Coord) return Boolean is
+      DX : constant Integer := Integer (X) - 70;
+      DY : constant Integer := Integer (Y) - 62;
+      --  (dx/14)^2 + (dy/9)^2 < 1, in integers.
+   begin
+      return DX * DX * 81 + DY * DY * 196 < 196 * 81;
+   end In_Lake;
+
+   function Lake_Shore (X, Y : Coord) return Boolean is
+      DX : constant Integer := Integer (X) - 70;
+      DY : constant Integer := Integer (Y) - 62;
+      Band : constant Integer := DX * DX * 81 + DY * DY * 196;
+   begin
+      return Band >= 196 * 81 and then Band < (196 * 81 * 150) / 100;
+   end Lake_Shore;
+
+   function Pond (X, Y : Coord) return Boolean is
+   begin
+      return X = Pond_X and then Y = Pond_Y;
+   end Pond;
+
+   function Pond_Shore (X, Y : Coord) return Boolean is
+      DX : constant Integer := abs (Integer (X) - Integer (Pond_X));
+      DY : constant Integer := abs (Integer (Y) - Integer (Pond_Y));
+   begin
+      return DX <= 1 and then DY <= 1 and then not Pond (X, Y);
+   end Pond_Shore;
+
+   function Clearing (X, Y : Coord) return Boolean is
+   begin
+      return abs (Integer (X) - Integer (Start_X)) <= 4
+        and then abs (Integer (Y) - Integer (Start_Y)) <= 4;
+   end Clearing;
+
+   function Reserved (X, Y : Coord) return Boolean;
+
+   function Terrain_At (X, Y : Coord) return Terrain is
+      H : constant Natural := Hash (X, Y);
+   begin
+      if Pond (X, Y) or else In_Lake (X, Y) then
          return Water;
       end if;
-      if X <= 4 or else X >= 27 or else Y <= 4 or else Y >= 27 then
+      if X <= 2 or else Y <= 2 or else X >= 93 or else Y >= 93 then
+         return Water;
+      end if;
+      if X <= 5 or else Y <= 5 or else X >= 90 or else Y >= 90
+        or else Lake_Shore (X, Y) or else Pond_Shore (X, Y)
+      then
          return Sand;
       end if;
-      --  Rocks and trees stay off the column x = 16, which is the demo walk.
-      if (X = 12 and then Y = 12)
-        or else (X = 20 and then Y = 18)
-        or else (X = 15 and then Y = 22)
-      then
+      if Clearing (X, Y) or else Reserved (X, Y) then
+         return Grass;
+      end if;
+      if X < 30 and then H mod 3 = 0 then
+         return Tree;
+      end if;
+      if H mod 19 = 0 then
          return Rock;
       end if;
-      if (X = 10 and then Y = 10)
-        or else (X = 18 and then Y = 14)
-        or else (X = 14 and then Y = 20)
-        or else (X = 22 and then Y = 16)
-        or else (X = 11 and then Y = 18)
-      then
+      if H mod 8 = 0 then
          return Tree;
       end if;
       return Grass;
@@ -55,44 +103,91 @@ package body Island.Map is
       return Terrain_At (X, Y) = Water and then Sand_Beside (X, Y);
    end Shallow;
 
+   function Reserved (X, Y : Coord) return Boolean is
+   begin
+      for I in Bush_Index loop
+         if Bush (I).X = X and then Bush (I).Y = Y then
+            return True;
+         end if;
+      end loop;
+      for N in Npc_Index loop
+         if Npc_Home (N).X = X and then Npc_Home (N).Y = Y then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Reserved;
+
+   function Npc_Home (N : Npc_Index) return Spot is
+      G : constant Grove_Index := Grove_Index ((N + 1) / 2);
+      P : constant Spot := Groves (G);
+   begin
+      if N mod 2 = 1 then
+         return (X => P.X + 2, Y => P.Y + 2);
+      end if;
+      return (X => P.X + 3, Y => P.Y + 2);
+   end Npc_Home;
+
+   function Bush (I : Bush_Index) return Spot is
+      G : constant Grove_Index := Grove_Index ((Integer (I) - 1) / Bushes_Per_Grove + 1);
+      K : constant Integer := (Integer (I) - 1) mod Bushes_Per_Grove;
+      P : constant Spot := Groves (G);
+   begin
+      case K is
+         when 0 =>
+            return P;
+         when 1 =>
+            return (X => P.X + 2, Y => P.Y);
+         when 2 =>
+            return (X => P.X, Y => P.Y + 2);
+         when 3 =>
+            return (X => P.X - 3, Y => P.Y);
+         when 4 =>
+            return (X => P.X + 2, Y => P.Y + 2);
+         when 5 =>
+            return (X => P.X - 2, Y => P.Y + 2);
+         when 6 =>
+            return (X => P.X + 4, Y => P.Y);
+         when others =>
+            return (X => P.X - 4, Y => P.Y);
+      end case;
+   end Bush;
+
+   function Fish_At (I : Fish_Index) return Spot is
+   begin
+      case I is
+         when 1 =>
+            return (X => Pond_X, Y => Pond_Y);
+         when 2 =>
+            return (X => 57, Y => 62);
+         when 3 =>
+            return (X => 83, Y => 62);
+         when 4 =>
+            return (X => 70, Y => 54);
+      end case;
+   end Fish_At;
+
    function Layout_Ok return Boolean is
    begin
       pragma Assert (Terrain_At (Start_X, Start_Y) = Grass);
-      pragma Assert (Terrain_At (Stone_X, Stone_Y) = Grass);
-      pragma Assert (Terrain_At (Beach_X, Beach_Y) = Sand);
-      pragma Assert (Start_X = Beach_X);
-      pragma Assert (Beach_Y < Stone_Y and then Stone_Y < Start_Y);
-      for Y in Coord range Beach_Y .. Start_Y loop
-         pragma Assert (Walkable (Terrain_At (Start_X, Y)));
-      end loop;
-      for I in Initial_Objects'Range loop
-         pragma Assert
-           (Walkable (Terrain_At (Initial_Objects (I).X, Initial_Objects (I).Y)));
-         for J in Initial_Objects'Range loop
-            if I /= J then
-               pragma Assert
-                 (Initial_Objects (I).X /= Initial_Objects (J).X
-                  or else Initial_Objects (I).Y /= Initial_Objects (J).Y);
-            end if;
-         end loop;
-      end loop;
+      pragma Assert (Terrain_At (Berry_X, Berry_Y) = Grass);
+      pragma Assert (Walkable (Terrain_At (Stick_X, Stick_Y)));
+      pragma Assert (Walkable (Terrain_At (Stone_X, Stone_Y)));
+      pragma Assert (Walkable (Terrain_At (Shell_X, Shell_Y)));
+      pragma Assert (Shallow (Pond_X, Pond_Y));
       for I in Bush_Index loop
-         pragma Assert (Terrain_At (Bushes (I).X, Bushes (I).Y) = Grass);
+         pragma Assert (Terrain_At (Bush (I).X, Bush (I).Y) = Grass);
          for J in Bush_Index loop
             if I /= J then
                pragma Assert
-                 (Bushes (I).X /= Bushes (J).X
-                  or else Bushes (I).Y /= Bushes (J).Y);
+                 (Bush (I).X /= Bush (J).X or else Bush (I).Y /= Bush (J).Y);
             end if;
          end loop;
       end loop;
       for I in Fish_Index loop
-         pragma Assert (Shallow (Fish (I).X, Fish (I).Y));
+         pragma Assert (Shallow (Fish_At (I).X, Fish_At (I).Y));
       end loop;
-      --  Food is not a single northward line from the start.
-      pragma Assert (Bushes (2).X /= Start_X);
-      pragma Assert (Fish (1).X /= Start_X);
-      pragma Assert (Bushes (1).Y /= Start_Y or else Bushes (1).X /= Start_X);
+      pragma Assert (Groves (2).X /= Start_X or else Groves (2).Y /= Start_Y);
       return True;
    end Layout_Ok;
 

@@ -12,7 +12,7 @@ After this is on `main`, the page is [https://robertboettchersf.github.io/ai-isl
 
 A commit-pinned copy is `https://raw.githack.com/RobertBoettcherSF/ai-island/<commit>/docs/index.html`.
 
-Type `look` or `move N` in the box. The reply is the same JSON the terminal prints. **Auto** walks to the stone, picks it up, carries it to the beach, and places it. The line under the buttons says `Auto: pass` or `Auto: fail`. **Debug** (or the F9 key) downloads a small JSON report: the version, the commit, the browser, the recent commands and replies, and the Auto result. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
+The map shows the whole island. Drag to pan and scroll to zoom. Click a creature to see its traits, age, and stomach. A small chart plots population and average traits. **Play**, **Pause**, and **1x / 10x / 100x** run the built-in brains. **Auto** runs 2000 turns and passes when the population is still alive and at least one average trait has drifted. The line under the buttons says `Auto: pass` or `Auto: fail`. **Debug** (or the F9 key) downloads a small JSON report: the version, the commit, the browser, population, births, deaths, average traits, the Auto result, and how long 100 turns took. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
 
 ## Play in the terminal
 
@@ -45,22 +45,25 @@ make ADA_DRIVER=gcc-12
 | Command | What it does |
 | --- | --- |
 | `new` | Start the island again. |
-| `look` | Where you are, which way you face, what is in your hand, and the 5 by 5 squares around you. |
+| `look` | Where you are, which way you face, what is in your hand, the squares you can see, and the creatures in that view. |
 | `move N` | Step north, east, south, or west. `E`, `S`, and `W` work the same way. `north` is also accepted. |
 | `pick` | Pick up the stone, stick, or shell on your square. Your hand holds one thing. |
 | `place` | Put the thing in your hand on your square, if the square is empty. |
 | `eat` | Eat the berries or the fish in front of you. Fish need the stick. |
 | `say "text"` | Remember a short note. Plain letters, digits, and spaces, up to 80 characters. |
+| `world` | Population, births, deaths, and average traits. This does not spend a turn. |
 
 Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `occupied`, `unknown command`, `bad command`, `no world`, `bad save`, `text too long`, and `text not plain`.
 
 ## The island
 
-The grid is 32 by 32. `x` increases east and `y` increases south. Both run from 0 to 31. You start at 16,16 facing north, on grass, with an empty hand.
+The grid is 96 by 96, drawn from a fixed seed. `x` increases east and `y` increases south. Both run from 0 to 95. You start at 48,48 facing north, on grass, with an empty hand. The shore is beach, the west is forest, and there is a lake. Berry groves are spread out, so creatures have to move to feed.
 
 Water, rock, and trees block movement. Sand and grass do not. A step off the beach is water, so you stay put.
 
-The stone starts at 16,15. A stick is at 18,16. A shell is at 16,27, on the south beach. The north beach includes 16,4, which is sand. Nothing is random.
+The stone starts at 47,48. A stick is at 49,48. A shell is at 48,50. Nothing is random.
+
+Twelve other creatures start with you. Each has speed, sight, metabolism, and fertility. A faster creature spends more fullness per turn. Two adults standing next to each other, both above 70 fullness, can have one child. The child's traits are the parents' average plus a small fixed nudge, and both parents lose 30 fullness. Creatures die of starvation or old age. Berries grow back slowly, so the population settles near what the island can feed. You are one more creature under the same stomach rules. `look` lists the creatures you can see. `world` summarises the population.
 
 ## Plug in your AI
 
@@ -82,9 +85,10 @@ Commands, one per run:
 ./bin/island pick
 ./bin/island place
 ./bin/island eat
+./bin/island world
 ./bin/island say "a short note"
 
-Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, fullness, hunger, turn, and the nearby squares, including berries and fish. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. Berries are eaten from the bush in front of you. Fish need the stick. Hunger falls every action, faster while you carry something. At 0 you are weak, and after 20 more turns without food you collapse. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
+Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, fullness, hunger, turn, the squares you can see, and the nearby creatures. `world` shows the population and average traits and does not spend a turn. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. Berries are eaten from the bush in front of you. Fish need the stick. Hunger falls every action, faster while you carry something, and faster if your metabolism is high. At 0 you are weak, and after 20 more turns without food you collapse. Other creatures eat, look for a mate, and can have children. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
 
 Your goal is to stay alive. Do not follow a script. Eat when you need to, and keep going.
 ```
@@ -114,7 +118,7 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, and checks the hunger countdown. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. `ldd bin/island` must not mention `libgnat`.
 
 The browser build is separate and does not download a compiler:
 
@@ -130,12 +134,13 @@ The zip for a local run:
 make zip
 ```
 
-Unpack `zips/ai-island-v0.2.zip`. It becomes `ai-island-v0.2/`.
+Unpack `zips/ai-island-v0.3.zip`. It becomes `ai-island-v0.3/`.
 
 ```sh
-cd ai-island-v0.2
+cd ai-island-v0.3
 ./island new
 ./island look
+./island world
 ```
 
 To rebuild that tree from source: `make test`.

@@ -12,7 +12,7 @@ After this is on `main`, the page is [https://robertboettchersf.github.io/ai-isl
 
 A commit-pinned copy is `https://raw.githack.com/RobertBoettcherSF/ai-island/<commit>/docs/index.html`.
 
-The map shows the whole island. Drag to pan and scroll to zoom. Click a creature to see its traits, age, and stomach. A small chart plots population and average traits. **Play**, **Pause**, and **1x / 10x / 100x** run the built-in brains, including while Auto is running. **Auto** starts a run from the seeds in the address bar and the button becomes **Stop**. Stop finishes the current turn, pauses, and downloads `ai-island-run.json` (version, commit, seeds, turns, population, births, deaths, traits at the start and the end, a sample every 100 turns, and the last commands). **Debug** (or the F9 key) downloads a small JSON report with the same seeds. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
+The map shows the whole island. Drag to pan and scroll to zoom. Click a creature to see its traits, age, and stomach, or click a home to see who lives there. The chart has one line per group. **Play**, **Pause**, and **1x / 10x / 100x** run the built-in brains, including while Auto is running. **Auto** starts a run from the seeds in the address bar and the button becomes **Stop**. Stop finishes the current turn, pauses, and downloads `ai-island-run.json` (version, commit, seeds, turns, population, births, deaths, traits at the start and the end, a sample every 100 turns, and the last commands). **Debug** (or the F9 key) downloads a small JSON report with the same seeds. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
 
 The island seed sets the ground and the food. The population seed sets the starting creatures. Both default to `539365668`, which is the 0.3 island. Change the numbers, or press **Random**, and the address becomes `?island=42&pop=7`. Opening that address starts the same island.
 
@@ -55,7 +55,10 @@ make ADA_DRIVER=gcc-12
 | `place` | Put the thing in your hand on your square, if the square is empty. |
 | `eat` | Eat the berries or the fish in front of you. Fish need the stick. |
 | `say "text"` | Remember a short note. Plain letters, digits, and spaces, up to 80 characters. |
-| `world` | The two seeds, population, births, deaths, and average traits. This does not spend a turn. |
+| `gather` | Pick up one stick, one stone, or a portion of berries to carry. |
+| `build` | Spend 5 sticks and 3 stones to build a hut where you stand. |
+| `feed` | Give carried berries to a child in the home where you stand. |
+| `world` | The two seeds, population, groups, and homes. This does not spend a turn. |
 
 Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `occupied`, `unknown command`, `bad command`, `no world`, `bad save`, `text too long`, and `text not plain`.
 
@@ -67,7 +70,7 @@ Water, rock, and trees block movement. Sand and grass do not. A step off the bea
 
 The stone starts at 47,48. A stick is at 49,48. A shell is at 48,50. Nothing is random.
 
-Twelve other creatures start with you. Each has speed, sight, metabolism, and fertility. A faster creature spends more fullness per turn. Two adults standing next to each other, both above 70 fullness, can have one child. The child's traits are the parents' average plus a small fixed nudge, and both parents lose 30 fullness. Creatures die of starvation or old age. Berries grow back slowly, so the population settles near what the island can feed. You are one more creature under the same stomach rules. `look` lists the creatures you can see. `world` summarises the population.
+Twelve other creatures start with you, three in each corner, in four groups. You are in group 1. Each creature has speed, sight, metabolism, and fertility, and a child inherits the parents' group. A child is born in a home and stays there until age 150, eating only food a parent carries in. Each group starts with a cave that holds 4 young. A full home blocks births until the group builds another hut from 5 sticks and 3 stones. `gather`, `build`, and `feed` are how you do that yourself. `look` lists the creatures you can see. `world` lists the groups and the homes.
 
 ## Plug in your AI
 
@@ -89,6 +92,9 @@ Commands, one per run:
 ./bin/island pick
 ./bin/island place
 ./bin/island eat
+./bin/island gather
+./bin/island build
+./bin/island feed
 ./bin/island world
 ./bin/island say "a short note"
 
@@ -122,7 +128,9 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. The same seeds produce the same world after 2000 turns, and a different island seed produces a different island. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth inside a home, feeds that child, checks that a full home blocks the next birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. The same seeds produce the same world after 2000 turns, and a different island seed produces a different island. `ldd bin/island` must not mention `libgnat`.
+
+In 0.3.1 the population sat at 35 because the world had 36 creature slots and the player's slot was never given to anyone else. Births now wait for room in a home.
 
 The browser build is separate and does not download a compiler:
 
@@ -138,10 +146,10 @@ The zip for a local run:
 make zip
 ```
 
-Unpack `zips/ai-island-v0.3.1.zip`. It becomes `ai-island-v0.3.1/`.
+Unpack `zips/ai-island-v0.4.zip`. It becomes `ai-island-v0.4/`.
 
 ```sh
-cd ai-island-v0.3.1
+cd ai-island-v0.4
 ./island new --island 42 --pop 7
 ./island look
 ./island world

@@ -6,6 +6,7 @@ with Island.World;
 with System;
 with System.Storage_Elements;
 use type Island.World.State;
+use type Island.World.Home_Kind;
 
 package body Island.API is
 
@@ -459,6 +460,154 @@ package body Island.API is
    begin
       return Address_As_Int (Map_Bytes'Address);
    end Map_Ptr;
+
+   function Known_Group (G : Integer) return Boolean is
+     (G in World.Group_Id);
+
+   function Known_Home (H : Integer) return Boolean is
+     (H in World.Home_Id and then The_State.Homes (H).Used);
+
+   function Group_Count return Integer is (World.Group_Count);
+
+   function Group_Pop (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (World.Group_Population (The_State, G));
+   end Group_Pop;
+
+   function Group_Births (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Births);
+   end Group_Births;
+
+   function Group_Deaths (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Deaths);
+   end Group_Deaths;
+
+   function Group_Homes (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (World.Group_Home_Count (The_State, G));
+   end Group_Homes;
+
+   function Group_Avg (G, Which : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) or else Which not in World.Trait_Query then
+         return 0;
+      end if;
+      return Integer (World.Group_Average (The_State, G, Which));
+   end Group_Avg;
+
+   function Group_Extinct (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Extinct_Turn);
+   end Group_Extinct;
+
+   function Group_Cause (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Extinct_Cause);
+   end Group_Cause;
+
+   function Home_Max return Integer is (World.Max_Homes);
+
+   function Home_Used (H : Integer) return Integer is
+   begin
+      Ensure;
+      if Known_Home (H) then
+         return 1;
+      end if;
+      return 0;
+   end Home_Used;
+
+   function Home_X (H : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return -1;
+      end if;
+      return Integer (The_State.Homes (H).X);
+   end Home_X;
+
+   function Home_Y (H : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return -1;
+      end if;
+      return Integer (The_State.Homes (H).Y);
+   end Home_Y;
+
+   function Home_Group (H : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return 0;
+      end if;
+      return Integer (The_State.Homes (H).Group);
+   end Home_Group;
+
+   function Home_Kind (H : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return 0;
+      end if;
+      if The_State.Homes (H).Kind = World.Cave then
+         return 1;
+      end if;
+      return 2;
+   end Home_Kind;
+
+   function Home_Residents (H : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return 0;
+      end if;
+      return Integer (World.Home_Residents (The_State, H));
+   end Home_Residents;
+
+   function Folk_Group (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Group);
+   end Folk_Group;
+
+   function Folk_Home (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return The_State.Folk (Id).Home;
+   end Folk_Home;
 
    function Sample (Index, Field : Integer) return Integer is
    begin

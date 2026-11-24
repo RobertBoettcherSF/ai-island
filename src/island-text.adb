@@ -1,8 +1,10 @@
+with Island.Folk;
 with Island.Map;
 with Island.Stomach;
 
 package body Island.Text is
    use type World.Eat_Result;
+   use type World.Home_Kind;
    use type World.Food;
    use type World.Say_Result;
 
@@ -346,6 +348,8 @@ package body Island.Text is
             Add_Nat (B, Natural (S.Folk (I).Fertility));
             Add (B, ",""fullness"":");
             Add_Nat (B, Natural (S.Folk (I).Belly.Full));
+            Add (B, ",""group"":");
+            Add_Nat (B, Natural (S.Folk (I).Group));
             Add_Char (B, '}');
          end if;
       end loop;
@@ -601,6 +605,15 @@ package body Island.Text is
             Add_Nat (B, S.Pop_Seed);
             Add (B, ". Population ");
             Add_Nat (B, World.Alive_Count (S));
+            for G in World.Group_Id loop
+               Add (B, " Group ");
+               Add_Nat (B, G);
+               Add (B, ": ");
+               Add_Nat (B, World.Group_Population (S, G));
+               Add (B, " alive, ");
+               Add_Nat (B, World.Group_Home_Count (S, G));
+               Add (B, " homes.");
+            end loop;
             Add (B, ", births ");
             Add_Nat (B, S.Births);
             Add (B, ", deaths ");
@@ -625,9 +638,176 @@ package body Island.Text is
             Add_Nat (B, World.Average_Milli (S, 3));
             Add (B, ",""avg_fertility"":");
             Add_Nat (B, World.Average_Milli (S, 4));
+            Add (B, ",""groups"":[");
+            for G in World.Group_Id loop
+               if G > World.Group_Id'First then
+                  Add_Char (B, ',');
+               end if;
+               Add (B, "{""id"":");
+               Add_Nat (B, G);
+               Add (B, ",""population"":");
+               Add_Nat (B, World.Group_Population (S, G));
+               Add (B, ",""births"":");
+               Add_Nat (B, S.Groups (G).Births);
+               Add (B, ",""deaths"":");
+               Add_Nat (B, S.Groups (G).Deaths);
+               Add (B, ",""homes"":");
+               Add_Nat (B, World.Group_Home_Count (S, G));
+               Add (B, ",""avg_speed"":");
+               Add_Nat (B, World.Group_Average (S, G, 1));
+               Add (B, ",""extinct"":");
+               Add_Nat (B, S.Groups (G).Extinct_Turn);
+               Add (B, ",""cause"":");
+               Add_Nat (B, S.Groups (G).Extinct_Cause);
+               Add_Char (B, '}');
+            end loop;
+            Add (B, "],""homes"":[");
+            declare
+               First : Boolean := True;
+            begin
+               for H in World.Home_Id loop
+                  if S.Homes (H).Used then
+                     if not First then
+                        Add_Char (B, ',');
+                     end if;
+                     First := False;
+                     Add (B, "{""id"":");
+                     Add_Nat (B, H);
+                     Add (B, ",""kind"":""");
+                     if S.Homes (H).Kind = World.Cave then
+                        Add (B, "cave");
+                     else
+                        Add (B, "hut");
+                     end if;
+                     Add (B, """,""group"":");
+                     Add_Nat (B, Natural (S.Homes (H).Group));
+                     Add (B, ",""x"":");
+                     Add_Nat (B, Natural (S.Homes (H).X));
+                     Add (B, ",""y"":");
+                     Add_Nat (B, Natural (S.Homes (H).Y));
+                     Add (B, ",""capacity"":");
+                     Add_Nat (B, S.Homes (H).Capacity);
+                     Add (B, ",""residents"":");
+                     Add_Nat (B, World.Home_Residents (S, H));
+                     Add_Char (B, '}');
+                  end if;
+               end loop;
+            end;
+            Add_Char (B, ']');
             Close_Cmd;
          end if;
          Emit (True);
+      elsif Same (Command (V1 .. V2), "gather") then
+         if Has then
+            Fail_Bad ("gather");
+            return;
+         end if;
+         declare
+            Code : Natural;
+         begin
+            Island.Folk.Player_Gather (S, Code);
+            Spend (False);
+            if As_Text then
+               if Code = 1 then
+                  Add (B, "You gather a stick.");
+               elsif Code = 2 then
+                  Add (B, "You gather a stone.");
+               elsif Code = 3 then
+                  Add (B, "You gather berries to carry home.");
+               else
+                  Add (B, "There is nothing here to gather.");
+               end if;
+            else
+               Add (B, "{""ok"":");
+               if Code = 0 then
+                  Add (B, "false,""reason"":""nothing here""");
+               else
+                  Add (B, "true");
+               end if;
+               Add (B, ",""cmd"":""gather"",""took"":");
+               Add_Nat (B, Code);
+               Add (B, ",""sticks"":");
+               Add_Nat (B, S.Folk (World.Player_Id).Sticks);
+               Add (B, ",""stones"":");
+               Add_Nat (B, S.Folk (World.Player_Id).Stones);
+               Add (B, ",""food"":");
+               Add_Nat (B, S.Folk (World.Player_Id).Food);
+               Close_Cmd;
+            end if;
+            Emit (Code /= 0);
+         end;
+      elsif Same (Command (V1 .. V2), "build") then
+         if Has then
+            Fail_Bad ("build");
+            return;
+         end if;
+         declare
+            Code : Natural;
+         begin
+            Island.Folk.Player_Build (S, Code);
+            Spend (False);
+            if As_Text then
+               if Code = 1 then
+                  Add (B, "You build a hut.");
+               elsif Code = 2 then
+                  Add (B, "A hut needs 5 sticks and 3 stones.");
+               else
+                  Add (B, "You cannot build a hut here.");
+               end if;
+            else
+               Add (B, "{""ok"":");
+               if Code = 1 then
+                  Add (B, "true");
+               else
+                  Add (B, "false,""reason"":""");
+                  if Code = 2 then
+                     Add (B, "need materials");
+                  else
+                     Add (B, "cannot build");
+                  end if;
+                  Add (B, """");
+               end if;
+               Add (B, ",""cmd"":""build""");
+               Close_Cmd;
+            end if;
+            Emit (Code = 1);
+         end;
+      elsif Same (Command (V1 .. V2), "feed") then
+         if Has then
+            Fail_Bad ("feed");
+            return;
+         end if;
+         declare
+            Code : Natural;
+         begin
+            Island.Folk.Player_Feed (S, Code);
+            Spend (False);
+            if As_Text then
+               if Code = 1 then
+                  Add (B, "You feed a child.");
+               elsif Code = 2 then
+                  Add (B, "You are not carrying food.");
+               else
+                  Add (B, "No child is here to feed.");
+               end if;
+            else
+               Add (B, "{""ok"":");
+               if Code = 1 then
+                  Add (B, "true");
+               else
+                  Add (B, "false,""reason"":""");
+                  if Code = 2 then
+                     Add (B, "no food");
+                  else
+                     Add (B, "no child");
+                  end if;
+                  Add (B, """");
+               end if;
+               Add (B, ",""cmd"":""feed""");
+               Close_Cmd;
+            end if;
+            Emit (Code = 1);
+         end;
       elsif Same (Command (V1 .. V2), "look") then
          if Has then
             Fail_Bad ("look");

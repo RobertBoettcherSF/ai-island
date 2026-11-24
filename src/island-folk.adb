@@ -4,6 +4,7 @@ with Island.Stomach;
 
 package body Island.Folk is
    use type Stomach.Hunger;
+   use type World.Pile_Kind;
 
    function Mix (Seed : Map.Seed_Value; A, B, C : Natural) return Natural is
       use Interfaces;
@@ -34,12 +35,52 @@ package body Island.Folk is
       return False;
    end Occupied;
 
+   type Corner is record
+      X : Coord;
+      Y : Coord;
+   end record;
+
+   Corners : constant array (World.Group_Id) of Corner :=
+     [1 => (X => 18, Y => 18),
+      2 => (X => 78, Y => 18),
+      3 => (X => 18, Y => 78),
+      4 => (X => 78, Y => 78)];
+
+   procedure Place_Adult
+     (S : in out World.State; Who : World.Folk_Id; G : World.Group_Id; X, Y : Coord)
+   is
+   begin
+      S.Folk (Who).Alive := True;
+      S.Folk (Who).X := X;
+      S.Folk (Who).Y := Y;
+      S.Folk (Who).Facing := North;
+      S.Folk (Who).Belly := (Full => 100, Empty_For => 0, Collapsed => False);
+      S.Folk (Who).Age := 160;
+      S.Folk (Who).Group := G;
+      S.Folk (Who).Home := 0;
+      S.Folk (Who).Sticks := 0;
+      S.Folk (Who).Stones := 0;
+      S.Folk (Who).Food := 0;
+      S.Folk (Who).Cool := 0;
+      S.Folk (Who).Speed := 1 + Mix (S.Pop_Seed, Who, 1, 0) mod 3;
+      if S.Folk (Who).Speed = 1 then
+         S.Folk (Who).Metabolism := 1;
+      else
+         S.Folk (Who).Metabolism := 2;
+      end if;
+      S.Folk (Who).Sight := 2 + Mix (S.Pop_Seed, Who, 2, 0) mod 3;
+      S.Folk (Who).Fertility := 1 + Mix (S.Pop_Seed, Who, 3, 0) mod 3;
+   end Place_Adult;
+
    procedure Setup (S : in out World.State) is
-      Home : Map.Spot;
-      N    : Positive;
+      N : Positive := 1;
+      C : Corner;
    begin
       S.Births := 0;
       S.Deaths := 0;
+      S.Homes := [others => <>];
+      S.Piles := [others => <>];
+      S.Groups := [others => <>];
       for I in World.Folk_Id loop
          S.Folk (I) := (others => <>);
          S.Folk (I).Alive := False;
@@ -48,29 +89,22 @@ package body Island.Folk is
         (Alive => True,
          X => S.X, Y => S.Y, Facing => S.Facing,
          Belly => S.Belly,
-         Age => 30,
+         Age => 160,
          Speed => 1, Sight => 3, Metabolism => 1, Fertility => 2,
-         Cool => 0);
-      N := 1;
-      for G in Map.Npc_Index loop
-         N := N + 1;
-         Home := Map.Npc_Home (S.Island_Seed, G);
-         S.Folk (N).Alive := True;
-         S.Folk (N).X := Home.X;
-         S.Folk (N).Y := Home.Y;
-         S.Folk (N).Facing := North;
-         S.Folk (N).Belly :=
-           (Full => 100, Empty_For => 0, Collapsed => False);
-         S.Folk (N).Age := 50;
-         S.Folk (N).Speed := 1 + Mix (S.Pop_Seed, N, 1, 0) mod 3;
-         if S.Folk (N).Speed = 1 then
-            S.Folk (N).Metabolism := 1;
-         else
-            S.Folk (N).Metabolism := 2;
-         end if;
-         S.Folk (N).Sight := 2 + Mix (S.Pop_Seed, N, 2, 0) mod 3;
-         S.Folk (N).Fertility := 1 + Mix (S.Pop_Seed, N, 3, 0) mod 3;
-         S.Folk (N).Cool := 0;
+         Cool => 0, Group => 1, Home => 0, Sticks => 0, Stones => 0, Food => 0);
+      for G in World.Group_Id loop
+         C := Corners (G);
+         S.Homes (G) :=
+           (Used => True, Kind => World.Cave, Group => G,
+            X => C.X, Y => C.Y, Capacity => World.Home_Capacity);
+         S.Piles (G) :=
+           (Kind => World.Stick_Pile, X => C.X + 6, Y => C.Y, Count => 10);
+         S.Piles (World.Group_Id'Last + G) :=
+           (Kind => World.Stone_Pile, X => C.X, Y => C.Y + 6, Count => 6);
+         Place_Adult (S, N + 1, G, C.X + 1, C.Y);
+         Place_Adult (S, N + 2, G, C.X, C.Y + 1);
+         Place_Adult (S, N + 3, G, C.X + 1, C.Y + 1);
+         N := N + 3;
       end loop;
    end Setup;
 
@@ -145,9 +179,10 @@ package body Island.Folk is
                NX := NX - 1;
          end case;
          if NX in Coord and then NY in Coord
-           and then Map.Walkable
-             (Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY)))
-           and then not Occupied (S, Coord (NX), Coord (NY), Who)
+           and then World.Standable (S, Coord (NX), Coord (NY))
+           and then
+             (World.Home_At (S, Coord (NX), Coord (NY)) /= 0
+              or else not Occupied (S, Coord (NX), Coord (NY), Who))
          then
             S.Folk (Who).X := Coord (NX);
             S.Folk (Who).Y := Coord (NY);
@@ -215,6 +250,160 @@ package body Island.Folk is
       Seek (S, Who, Coord (Goal_X), Coord (Goal_Y));
    end Wander;
 
+   function Space_For (S : World.State; G : World.Group_Id) return Boolean is
+   begin
+      for H in World.Home_Id loop
+         if S.Homes (H).Used
+           and then S.Homes (H).Group = G
+           and then World.Home_Residents (S, H) < S.Homes (H).Capacity
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Space_For;
+
+   function Needs_Food (S : World.State; G : World.Group_Id) return Boolean is
+   begin
+      for I in World.Folk_Id loop
+         if S.Folk (I).Alive
+           and then S.Folk (I).Group = G
+           and then S.Folk (I).Age < World.Adult_Age
+           and then S.Folk (I).Belly.Full < 55
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Needs_Food;
+
+   procedure Child_Home
+     (S : World.State; G : World.Group_Id; X, Y : out Coord; Found : out Boolean)
+   is
+   begin
+      Found := False;
+      X := 0;
+      Y := 0;
+      for I in World.Folk_Id loop
+         if S.Folk (I).Alive
+           and then S.Folk (I).Group = G
+           and then S.Folk (I).Age < World.Adult_Age
+           and then S.Folk (I).Home in World.Home_Id
+           and then S.Folk (I).Belly.Full < 55
+         then
+            X := S.Homes (S.Folk (I).Home).X;
+            Y := S.Homes (S.Folk (I).Home).Y;
+            Found := True;
+            return;
+         end if;
+      end loop;
+   end Child_Home;
+
+   procedure Give_Food (S : in out World.State; Who : World.Folk_Id) is
+      Here : Natural := World.Home_At (S, S.Folk (Who).X, S.Folk (Who).Y);
+      Best : Integer := 0;
+      Low  : Natural := 101;
+   begin
+      if Here = 0 then
+         for H in World.Home_Id loop
+            if S.Homes (H).Used
+              and then S.Homes (H).Group = S.Folk (Who).Group
+              and then abs (Integer (S.Homes (H).X) - Integer (S.Folk (Who).X)) <= 1
+              and then abs (Integer (S.Homes (H).Y) - Integer (S.Folk (Who).Y)) <= 1
+            then
+               Here := H;
+               exit;
+            end if;
+         end loop;
+      end if;
+      if S.Folk (Who).Food = 0 or else Here = 0 then
+         return;
+      end if;
+      if S.Homes (Here).Group /= S.Folk (Who).Group then
+         return;
+      end if;
+      for I in World.Folk_Id loop
+         if S.Folk (I).Alive
+           and then S.Folk (I).Home = Here
+           and then S.Folk (I).Age < World.Adult_Age
+           and then Natural (S.Folk (I).Belly.Full) < Low
+         then
+            Low := Natural (S.Folk (I).Belly.Full);
+            Best := I;
+         end if;
+      end loop;
+      if Best = 0 then
+         return;
+      end if;
+      Stomach.Feed (S.Folk (Best).Belly, Map.Berry_Gain);
+      S.Folk (Who).Food := 0;
+   end Give_Food;
+
+   procedure Take_Berry (S : in out World.State; Who : World.Folk_Id) is
+      Spot : Map.Spot;
+   begin
+      if S.Folk (Who).Food > 0 then
+         return;
+      end if;
+      for I in Map.Bush_Index loop
+         Spot := Map.Bush (S.Island_Seed, I);
+         if Bush_Ripe (S, I)
+           and then abs (Integer (Spot.X) - Integer (S.Folk (Who).X)) <= 1
+           and then abs (Integer (Spot.Y) - Integer (S.Folk (Who).Y)) <= 1
+         then
+            S.Folk (Who).Food := 1;
+            World.Mark_Bush (S, Spot.X, Spot.Y);
+            return;
+         end if;
+      end loop;
+   end Take_Berry;
+
+   procedure Take_Pile (S : in out World.State; Who : World.Folk_Id) is
+   begin
+      for I in World.Pile_Id loop
+         if S.Piles (I).Count > 0
+           and then S.Piles (I).X = S.Folk (Who).X
+           and then S.Piles (I).Y = S.Folk (Who).Y
+         then
+            if S.Piles (I).Kind = World.Stick_Pile and then S.Folk (Who).Sticks < 8 then
+               S.Folk (Who).Sticks := S.Folk (Who).Sticks + 1;
+               S.Piles (I).Count := S.Piles (I).Count - 1;
+               return;
+            elsif S.Piles (I).Kind = World.Stone_Pile and then S.Folk (Who).Stones < 6 then
+               S.Folk (Who).Stones := S.Folk (Who).Stones + 1;
+               S.Piles (I).Count := S.Piles (I).Count - 1;
+               return;
+            end if;
+         end if;
+      end loop;
+   end Take_Pile;
+
+   procedure Build_Hut (S : in out World.State; Who : World.Folk_Id; Built : out Boolean) is
+   begin
+      Built := False;
+      if S.Folk (Who).Sticks < 5 or else S.Folk (Who).Stones < 3 then
+         return;
+      end if;
+      if World.Home_At (S, S.Folk (Who).X, S.Folk (Who).Y) /= 0 then
+         return;
+      end if;
+      if not Map.Walkable (Map.Terrain_At (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y)) then
+         return;
+      end if;
+      for H in World.Home_Id loop
+         if not S.Homes (H).Used then
+            S.Homes (H) :=
+              (Used => True, Kind => World.Hut, Group => S.Folk (Who).Group,
+               X => S.Folk (Who).X, Y => S.Folk (Who).Y,
+               Capacity => World.Home_Capacity);
+            S.Folk (Who).Sticks := S.Folk (Who).Sticks - 5;
+            S.Folk (Who).Stones := S.Folk (Who).Stones - 3;
+            Built := True;
+            return;
+         end if;
+      end loop;
+   end Build_Hut;
+
    procedure Others_Act (S : in out World.State) is
       Best      : Natural;
       Best_X    : Coord;
@@ -227,6 +416,11 @@ package body Island.Folk is
          if Who /= World.Player_Id and then S.Folk (Who).Alive
            and then not S.Folk (Who).Belly.Collapsed
          then
+            if S.Folk (Who).Age < World.Adult_Age then
+               goto Next_Folk;
+            end if;
+            Give_Food (S, Who);
+            Take_Pile (S, Who);
             Hungry :=
               S.Folk (Who).Belly.Full < 45
               or else Stomach.Status (S.Folk (Who).Belly) = Stomach.Hungry
@@ -235,7 +429,63 @@ package body Island.Folk is
             Best := Natural'Last;
             Best_X := S.Folk (Who).X;
             Best_Y := S.Folk (Who).Y;
-            if Hungry then
+            if S.Folk (Who).Food > 0 and then Needs_Food (S, S.Folk (Who).Group) then
+               declare
+                  HX, HY : Coord;
+                  Have   : Boolean;
+               begin
+                  Child_Home (S, S.Folk (Who).Group, HX, HY, Have);
+                  if Have then
+                     Best_X := HX;
+                     Best_Y := HY;
+                     Found := True;
+                  end if;
+               end;
+            elsif Needs_Food (S, S.Folk (Who).Group)
+              and then S.Folk (Who).Belly.Full >= 30
+            then
+               Take_Berry (S, Who);
+               for B in Map.Bush_Index loop
+                  if Bush_Ripe (S, B)
+                    and then In_Sight
+                      (S.Folk (Who), Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y)
+                  then
+                     D := Dist
+                       (S.Folk (Who).X, S.Folk (Who).Y,
+                        Map.Bush (S.Island_Seed, B).X, Map.Bush (S.Island_Seed, B).Y);
+                     if D < Best then
+                        Best := D;
+                        Best_X := Map.Bush (S.Island_Seed, B).X;
+                        Best_Y := Map.Bush (S.Island_Seed, B).Y;
+                        Found := True;
+                     end if;
+                  end if;
+               end loop;
+            elsif not Space_For (S, S.Folk (Who).Group) then
+               declare
+                  Did : Boolean;
+               begin
+                  if S.Folk (Who).Sticks >= 5 and then S.Folk (Who).Stones >= 3 then
+                     Build_Hut (S, Who, Did);
+                  end if;
+               end;
+               for P in World.Pile_Id loop
+                  if S.Piles (P).Count > 0
+                    and then
+                      ((S.Folk (Who).Sticks < 5 and then S.Piles (P).Kind = World.Stick_Pile)
+                       or else
+                         (S.Folk (Who).Sticks >= 5
+                          and then S.Folk (Who).Stones < 3
+                          and then S.Piles (P).Kind = World.Stone_Pile))
+                    and then abs (Integer (S.Piles (P).X) - Integer (Corners (S.Folk (Who).Group).X)) < 20
+                  then
+                     Best_X := S.Piles (P).X;
+                     Best_Y := S.Piles (P).Y;
+                     Found := True;
+                     exit;
+                  end if;
+               end loop;
+            elsif Hungry then
                for B in Map.Bush_Index loop
                   if Bush_Ripe (S, B)
                     and then In_Sight
@@ -255,9 +505,11 @@ package body Island.Folk is
             elsif S.Folk (Who).Age >= World.Adult_Age
               and then S.Folk (Who).Belly.Full > 70
               and then S.Folk (Who).Cool = 0
+              and then Space_For (S, S.Folk (Who).Group)
             then
                for Other in World.Folk_Id loop
                   if Other /= Who and then S.Folk (Other).Alive
+                    and then S.Folk (Other).Group = S.Folk (Who).Group
                     and then S.Folk (Other).Age >= World.Adult_Age
                     and then S.Folk (Other).Belly.Full > 70
                     and then In_Sight
@@ -300,6 +552,7 @@ package body Island.Folk is
             else
                Wander (S, Who);
             end if;
+            <<Next_Folk>>
          end if;
       end loop;
    end Others_Act;
@@ -342,59 +595,46 @@ package body Island.Folk is
       return Integer (Mix (S.Pop_Seed, S.Turn + A, B, Which) mod 3) - 1;
    end Mut;
 
+   function Free_Home (S : World.State; G : World.Group_Id) return Natural is
+   begin
+      for H in World.Home_Id loop
+         if S.Homes (H).Used
+           and then S.Homes (H).Group = G
+           and then World.Home_Residents (S, H) < S.Homes (H).Capacity
+         then
+            return H;
+         end if;
+      end loop;
+      return 0;
+   end Free_Home;
+
    procedure Birth_One
      (S : in out World.State; A, B : World.Folk_Id; Slot : World.Folk_Id)
    is
-      NX, NY : Integer;
-      Placed : Boolean := False;
+      Home : constant Natural := Free_Home (S, S.Folk (A).Group);
    begin
-      for K in 1 .. 4 loop
-         NX := Integer (S.Folk (A).X);
-         NY := Integer (S.Folk (A).Y);
-         case K is
-            when 1 =>
-               NY := NY - 1;
-            when 2 =>
-               NX := NX + 1;
-            when 3 =>
-               NY := NY + 1;
-            when 4 =>
-               NX := NX - 1;
-         end case;
-         if NX in Coord and then NY in Coord
-           and then Map.Walkable
-             (Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY)))
-           and then not Occupied (S, Coord (NX), Coord (NY), 0)
-         then
-            S.Folk (Slot).Alive := True;
-            S.Folk (Slot).X := Coord (NX);
-            S.Folk (Slot).Y := Coord (NY);
-            S.Folk (Slot).Facing := North;
-            S.Folk (Slot).Age := 0;
-            S.Folk (Slot).Cool := 12;
-            S.Folk (Slot).Belly :=
-              (Full => 60, Empty_For => 0, Collapsed => False);
-            S.Folk (Slot).Speed := Clamp_Speed
-              ((S.Folk (A).Speed + S.Folk (B).Speed) / 2
-               + Mut (S, A, B, 1));
-            S.Folk (Slot).Sight := Clamp_Sight
-              ((S.Folk (A).Sight + S.Folk (B).Sight) / 2
-               + Mut (S, A, B, 2));
-            if S.Folk (Slot).Speed = 1 then
-               S.Folk (Slot).Metabolism := 1;
-            else
-               S.Folk (Slot).Metabolism := 2;
-            end if;
-            S.Folk (Slot).Fertility := Clamp_Fert
-              ((S.Folk (A).Fertility + S.Folk (B).Fertility) / 2
-               + Mut (S, A, B, 3));
-            Placed := True;
-            exit;
-         end if;
-      end loop;
-      if not Placed then
+      if Home = 0 or else S.Folk (A).Group /= S.Folk (B).Group then
          return;
       end if;
+      S.Folk (Slot).Alive := True;
+      S.Folk (Slot).X := S.Homes (Home).X;
+      S.Folk (Slot).Y := S.Homes (Home).Y;
+      S.Folk (Slot).Facing := North;
+      S.Folk (Slot).Age := 0;
+      S.Folk (Slot).Cool := 12;
+      S.Folk (Slot).Home := Home;
+      S.Folk (Slot).Group := S.Folk (A).Group;
+      S.Folk (Slot).Sticks := 0;
+      S.Folk (Slot).Stones := 0;
+      S.Folk (Slot).Food := 0;
+      S.Folk (Slot).Belly := (Full => 60, Empty_For => 0, Collapsed => False);
+      S.Folk (Slot).Speed := Clamp_Speed
+        ((S.Folk (A).Speed + S.Folk (B).Speed) / 2 + Mut (S, A, B, 1));
+      S.Folk (Slot).Sight := Clamp_Sight
+        ((S.Folk (A).Sight + S.Folk (B).Sight) / 2 + Mut (S, A, B, 2));
+      S.Folk (Slot).Metabolism := 1;
+      S.Folk (Slot).Fertility := Clamp_Fert
+        ((S.Folk (A).Fertility + S.Folk (B).Fertility) / 2 + Mut (S, A, B, 3));
       S.Folk (A).Belly.Full :=
         Stomach.Fullness (Natural (S.Folk (A).Belly.Full) - 30);
       S.Folk (B).Belly.Full :=
@@ -402,6 +642,8 @@ package body Island.Folk is
       S.Folk (A).Cool := 4 * (4 - Natural (S.Folk (A).Fertility));
       S.Folk (B).Cool := 4 * (4 - Natural (S.Folk (B).Fertility));
       S.Births := S.Births + 1;
+      S.Groups (S.Folk (A).Group).Births :=
+        S.Groups (S.Folk (A).Group).Births + 1;
    end Birth_One;
 
    function Free_Slot (S : World.State) return Integer is
@@ -435,6 +677,9 @@ package body Island.Folk is
       for Who in World.Folk_Id loop
          if S.Folk (Who).Alive then
             S.Folk (Who).Age := S.Folk (Who).Age + Natural (Turns);
+            if S.Folk (Who).Age >= World.Adult_Age then
+               S.Folk (Who).Home := 0;
+            end if;
             if S.Folk (Who).Cool > 0 then
                if S.Folk (Who).Cool > Natural (Turns) then
                   S.Folk (Who).Cool := S.Folk (Who).Cool - Natural (Turns);
@@ -453,10 +698,12 @@ package body Island.Folk is
          then
             for B in World.Folk_Id loop
                if B > A and then S.Folk (B).Alive and then not Bred (B)
+                 and then S.Folk (B).Group = S.Folk (A).Group
                  and then S.Folk (B).Age >= World.Adult_Age
                  and then S.Folk (B).Belly.Full > 70
                  and then S.Folk (B).Cool = 0
                  and then Adjacent (S.Folk (A), S.Folk (B))
+                 and then Space_For (S, S.Folk (A).Group)
                then
                   Slot := Free_Slot (S);
                   if Slot /= 0 then
@@ -474,8 +721,25 @@ package body Island.Folk is
            and then (S.Folk (Who).Belly.Collapsed
                      or else S.Folk (Who).Age >= World.Max_Age)
          then
-            S.Folk (Who).Alive := False;
-            S.Deaths := S.Deaths + 1;
+            declare
+               G     : constant World.Group_Id := S.Folk (Who).Group;
+               Cause : Natural := 2;
+            begin
+               if S.Folk (Who).Belly.Collapsed then
+                  Cause := 1;
+               elsif not Space_For (S, G) then
+                  Cause := 3;
+               end if;
+               S.Folk (Who).Alive := False;
+               S.Deaths := S.Deaths + 1;
+               S.Groups (G).Deaths := S.Groups (G).Deaths + 1;
+               if World.Group_Population (S, G) = 0
+                 and then S.Groups (G).Extinct_Turn = 0
+               then
+                  S.Groups (G).Extinct_Turn := S.Turn;
+                  S.Groups (G).Extinct_Cause := Cause;
+               end if;
+            end;
             if Who = World.Player_Id then
                S.Folk (Who).Belly.Collapsed := True;
                S.Folk (Who).Belly.Full := 0;
@@ -532,6 +796,95 @@ package body Island.Folk is
       S.Facing := S.Folk (Who).Facing;
       S.Belly := S.Folk (Who).Belly;
    end Player_Act;
+
+   procedure Sync_Player (S : in out World.State) is
+   begin
+      S.Folk (World.Player_Id).X := S.X;
+      S.Folk (World.Player_Id).Y := S.Y;
+      S.Folk (World.Player_Id).Facing := S.Facing;
+      S.Folk (World.Player_Id).Belly := S.Belly;
+   end Sync_Player;
+
+   procedure Player_Gather (S : in out World.State; Result : out Natural) is
+      Who : constant World.Folk_Id := World.Player_Id;
+   begin
+      Sync_Player (S);
+      Result := 0;
+      for I in World.Pile_Id loop
+         if S.Piles (I).Count > 0
+           and then S.Piles (I).X = S.Folk (Who).X
+           and then S.Piles (I).Y = S.Folk (Who).Y
+         then
+            if S.Piles (I).Kind = World.Stick_Pile and then S.Folk (Who).Sticks < 8 then
+               S.Folk (Who).Sticks := S.Folk (Who).Sticks + 1;
+               S.Piles (I).Count := S.Piles (I).Count - 1;
+               Result := 1;
+               return;
+            elsif S.Piles (I).Kind = World.Stone_Pile and then S.Folk (Who).Stones < 6 then
+               S.Folk (Who).Stones := S.Folk (Who).Stones + 1;
+               S.Piles (I).Count := S.Piles (I).Count - 1;
+               Result := 2;
+               return;
+            end if;
+         end if;
+      end loop;
+      if S.Folk (Who).Food = 0 then
+         Take_Berry (S, Who);
+         if S.Folk (Who).Food = 1 then
+            Result := 3;
+         end if;
+      end if;
+   end Player_Gather;
+
+   procedure Player_Build (S : in out World.State; Result : out Natural) is
+      Who : constant World.Folk_Id := World.Player_Id;
+      Did : Boolean;
+   begin
+      Sync_Player (S);
+      if S.Folk (Who).Sticks < 5 or else S.Folk (Who).Stones < 3 then
+         Result := 2;
+         return;
+      end if;
+      Build_Hut (S, Who, Did);
+      if Did then
+         Result := 1;
+      else
+         Result := 3;
+      end if;
+   end Player_Build;
+
+   procedure Player_Feed (S : in out World.State; Result : out Natural) is
+      Who  : constant World.Folk_Id := World.Player_Id;
+      Full : Natural;
+   begin
+      Sync_Player (S);
+      if S.Folk (Who).Food = 0 then
+         Result := 2;
+         return;
+      end if;
+      Full := 0;
+      for I in World.Folk_Id loop
+         if S.Folk (I).Alive
+           and then S.Folk (I).Home /= 0
+           and then S.Folk (I).Age < World.Adult_Age
+           and then S.Homes (S.Folk (I).Home).X = S.Folk (Who).X
+           and then S.Homes (S.Folk (I).Home).Y = S.Folk (Who).Y
+         then
+            Full := Natural (S.Folk (I).Belly.Full);
+            exit;
+         end if;
+      end loop;
+      if Full = 0 and then World.Home_At (S, S.Folk (Who).X, S.Folk (Who).Y) = 0 then
+         Result := 3;
+         return;
+      end if;
+      Give_Food (S, Who);
+      if S.Folk (Who).Food = 0 then
+         Result := 1;
+      else
+         Result := 3;
+      end if;
+   end Player_Feed;
 
 begin
    null;

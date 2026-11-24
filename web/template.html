@@ -99,16 +99,15 @@
     <li><span class="swatch" style="background:#2d6a3a"></span>tree</li>
     <li><span class="swatch" style="background:#c0392b"></span>berries</li>
     <li><span class="swatch" style="background:#1a5276"></span>fish</li>
-    <li>you are the triangle, other creatures are squares</li>
+    <li>you are the triangle. Groups: <span class="swatch" style="background:#143a5a"></span><span class="swatch" style="background:#c47b12"></span><span class="swatch" style="background:#2d6a3a"></span><span class="swatch" style="background:#8d1d2c"></span> caves are rings, huts are squares</li>
   </ul>
   <p id="inspect">Click a creature to see its traits, age, and stomach.</p>
   <canvas id="chart" width="640" height="140" role="img" aria-label="Population and average traits over time."></canvas>
   <ul class="legend">
-    <li><span class="swatch" style="background:#1b1916"></span>population</li>
-    <li><span class="swatch" style="background:#c47b12"></span>speed</li>
-    <li><span class="swatch" style="background:#143a5a"></span>sight</li>
-    <li><span class="swatch" style="background:#8d1d2c"></span>metabolism</li>
-    <li><span class="swatch" style="background:#2d6a3a"></span>fertility</li>
+    <li><span class="swatch" style="background:#143a5a"></span>group 1</li>
+    <li><span class="swatch" style="background:#c47b12"></span>group 2</li>
+    <li><span class="swatch" style="background:#2d6a3a"></span>group 3</li>
+    <li><span class="swatch" style="background:#8d1d2c"></span>group 4</li>
   </ul>
   <div class="row">
     <label for="islandSeed">Island <input id="islandSeed" type="number" min="0" max="2147483647" value="539365668"></label>
@@ -158,6 +157,7 @@ let speed = 1;
 let autoOn = false;
 let stopAfterTurn = false;
 let autoRun = null;
+let chartGroups = [];
 const DEFAULT_SEED = 539365668;
 const yieldChannel = new MessageChannel();
 let yieldWait = null;
@@ -167,6 +167,7 @@ yieldChannel.port1.onmessage = () => {
   if (resume) resume();
 };
 let selected = 0;
+let selectedHome = 0;
 let view = {x: 0, y: 0, scale: 6};
 let dragging = false;
 let dragMoved = false;
@@ -238,13 +239,57 @@ function creatureAt(x, y) {
   }
   return 0;
 }
+function homeAt(x, y) {
+  const n = ada.island_home_max();
+  for (let h = 1; h <= n; h++) {
+    if (ada.island_home_used(h) && ada.island_home_x(h) === x && ada.island_home_y(h) === y) return h;
+  }
+  return 0;
+}
+function groupSnapshot() {
+  const groups = [];
+  const n = ada.island_group_count();
+  const causes = ["", "starvation", "old age", "no space"];
+  for (let g = 1; g <= n; g++) {
+    groups.push({
+      id: g,
+      population: ada.island_group_pop(g),
+      births: ada.island_group_births(g),
+      deaths: ada.island_group_deaths(g),
+      homes: ada.island_group_homes(g),
+      speed: ada.island_group_avg(g, 1),
+      sight: ada.island_group_avg(g, 2),
+      metabolism: ada.island_group_avg(g, 3),
+      fertility: ada.island_group_avg(g, 4),
+      extinctTurn: ada.island_group_extinct(g),
+      extinctCause: causes[ada.island_group_cause(g)] || ""
+    });
+  }
+  return groups;
+}
 function showInspect() {
+  if (selectedHome && ada.island_home_used(selectedHome)) {
+    const names = [];
+    const n = ada.island_folk_max();
+    for (let i = 1; i <= n; i++) {
+      if (ada.island_folk_alive(i) && ada.island_folk_home(i) === selectedHome) {
+        names.push((i === 1 ? "you" : "creature " + i) + " age " + ada.island_folk_age(i) + " stomach " + ada.island_folk_full(i));
+      }
+    }
+    const kind = ada.island_home_kind(selectedHome) === 1 ? "Cave" : "Hut";
+    inspect.textContent = kind + " of group " + ada.island_home_group(selectedHome)
+      + " at " + ada.island_home_x(selectedHome) + "," + ada.island_home_y(selectedHome)
+      + ". Residents " + ada.island_home_residents(selectedHome)
+      + ". " + (names.length ? names.join("; ") : "No one is inside.");
+    return;
+  }
   if (!selected || !ada.island_folk_alive(selected)) {
-    inspect.textContent = "Click a creature to see its traits, age, and stomach.";
+    inspect.textContent = "Click a creature or a home.";
     return;
   }
   const who = selected === 1 ? "You" : "Creature " + selected;
-  inspect.textContent = who + " at " + ada.island_folk_x(selected) + "," + ada.island_folk_y(selected)
+  inspect.textContent = who + ", group " + ada.island_folk_group(selected)
+    + ", at " + ada.island_folk_x(selected) + "," + ada.island_folk_y(selected)
     + ". Age " + ada.island_folk_age(selected)
     + ", stomach " + ada.island_folk_full(selected)
     + ". Speed " + ada.island_folk_speed(selected)
@@ -290,6 +335,24 @@ function draw() {
       }
     }
   }
+  const homes = ada.island_home_max();
+  const groupColor = ["#143a5a", "#c47b12", "#2d6a3a", "#8d1d2c"];
+  for (let h = 1; h <= homes; h++) {
+    if (!ada.island_home_used(h)) continue;
+    const x = ada.island_home_x(h);
+    const y = ada.island_home_y(h);
+    const sx = (x - view.x) * view.scale;
+    const sy = (y - view.y) * view.scale;
+    ctx.strokeStyle = groupColor[ada.island_home_group(h) - 1] || "#1b1916";
+    ctx.lineWidth = 2;
+    if (ada.island_home_kind(h) === 1) {
+      ctx.beginPath();
+      ctx.arc(sx + view.scale / 2, sy + view.scale / 2, Math.max(3, view.scale * 0.42), 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(sx + 1, sy + 1, view.scale - 2, view.scale - 2);
+    }
+  }
   const folk = ada.island_folk_max();
   for (let i = 1; i <= folk; i++) {
     if (!ada.island_folk_alive(i)) continue;
@@ -306,8 +369,7 @@ function draw() {
       ctx.closePath();
       ctx.fill();
     } else {
-      const speed = ada.island_folk_speed(i);
-      ctx.fillStyle = speed >= 3 ? "#8d1d2c" : speed === 2 ? "#c47b12" : "#143a5a";
+      ctx.fillStyle = groupColor[ada.island_folk_group(i) - 1] || "#143a5a";
       const m = Math.max(2, view.scale * 0.55);
       ctx.fillRect(sx + (view.scale - m) / 2, sy + (view.scale - m) / 2, m, m);
     }
@@ -332,21 +394,20 @@ function drawChart() {
   const h = chart.height;
   ctx.fillStyle = "#fffdf8";
   ctx.fillRect(0, 0, w, h);
-  const n = ada.island_sample_count();
+  const n = chartGroups.length;
   if (n < 2) return;
   const series = [
-    [1, "#1b1916", 36],
-    [2, "#c47b12", 4000],
-    [3, "#143a5a", 4000],
-    [4, "#8d1d2c", 4000],
-    [5, "#2d6a3a", 4000]
+    [1, "#143a5a", 40],
+    [2, "#c47b12", 40],
+    [3, "#2d6a3a", 40],
+    [4, "#8d1d2c", 40]
   ];
   for (const [field, color, scale] of series) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 1; i <= n; i++) {
-      const v = ada.island_sample(i, field) / scale;
+      const v = (chartGroups[i - 1] ? chartGroups[i - 1][field - 1] : 0) / scale;
       const px = ((i - 1) / (n - 1)) * (w - 8) + 4;
       const py = h - 6 - Math.max(0, Math.min(1, v)) * (h - 16);
       if (i === 1) ctx.moveTo(px, py);
@@ -464,6 +525,8 @@ function applySeeds(island, pop) {
   if (!ada) return;
   ada.island_reset_seeds(island, pop);
   selected = 0;
+  selectedHome = 0;
+  chartGroups = [groupSnapshot().map((g) => g.population)];
   refreshHud();
   draw();
   drawChart();
@@ -473,13 +536,16 @@ function noteHistory() {
   if (!autoRun || turn === 0 || turn % 100 !== 0) return;
   const last = autoRun.history[autoRun.history.length - 1];
   if (last && last.turn === turn) return;
+  const groups = groupSnapshot();
+  chartGroups.push(groups.map((g) => g.population));
   autoRun.history.push({
     turn: turn,
     population: ada.island_population(),
     speed: ada.island_average(1),
     sight: ada.island_average(2),
     metabolism: ada.island_average(3),
-    fertility: ada.island_average(4)
+    fertility: ada.island_average(4),
+    groups: groups
   });
 }
 function downloadRun(file) {
@@ -504,6 +570,7 @@ function finishAuto() {
     start: autoRun.start,
     end: end,
     history: autoRun.history,
+    groups: groupSnapshot(),
     commands: log.slice()
   };
   window.aiIslandLastRun = file;
@@ -522,16 +589,19 @@ function finishAuto() {
 async function pump() {
   try {
     while (autoOn && !stopAfterTurn) {
-      ada.island_simulate(1);
-      noteHistory();
-      const turn = ada.island_turn();
-      if (turn % speed === 0 || stopAfterTurn) {
-        refreshHud();
-        draw();
-        drawChart();
+      const batch = speed;
+      const t0 = performance.now();
+      for (let i = 0; i < batch && !stopAfterTurn; i++) {
+        ada.island_simulate(1);
+        noteHistory();
       }
+      lastSimMs = performance.now() - t0;
+      if (batch === 100) frame100Ms = lastSimMs;
+      refreshHud();
+      draw();
+      drawChart();
       if (stopAfterTurn) break;
-      await yieldTurn();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     }
   } catch (e) {
     errors.push(String(e));
@@ -598,6 +668,7 @@ function report() {
     drawMs: lastDrawMs,
     per100Ms: frame100Ms,
     samples: samples,
+    groups: ada ? groupSnapshot() : [],
     crash: crashedBefore ? {previous: true} : null
   };
 }
@@ -634,7 +705,8 @@ map.addEventListener("pointerup", (ev) => {
   dragging = false;
   if (!dragMoved && ada) {
     const cell = cellAt(ev.clientX, ev.clientY);
-    selected = creatureAt(cell.x, cell.y);
+    selectedHome = homeAt(cell.x, cell.y);
+    selected = selectedHome ? 0 : creatureAt(cell.x, cell.y);
     draw();
   }
 });

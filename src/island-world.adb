@@ -5,7 +5,7 @@ package body Island.World is
    function Valid (S : State) return Boolean is
       Held : Natural := 0;
    begin
-      if not Map.Walkable (Map.Terrain_At (S.Island_Seed, S.X, S.Y)) then
+      if not Standable (S, S.X, S.Y) then
          return False;
       end if;
       for I in S.Objects'Range loop
@@ -46,9 +46,7 @@ package body Island.World is
       end loop;
       for I in Folk_Id loop
          if S.Folk (I).Alive then
-            if not Map.Walkable
-              (Map.Terrain_At (S.Island_Seed, S.Folk (I).X, S.Folk (I).Y))
-            then
+            if not Standable (S, S.Folk (I).X, S.Folk (I).Y) then
                return False;
             end if;
             if not Stomach.Levels_Ok (S.Folk (I).Belly) then
@@ -58,6 +56,71 @@ package body Island.World is
       end loop;
       return True;
    end Valid;
+
+   function Home_At (S : State; X, Y : Coord) return Natural is
+   begin
+      for I in Home_Id loop
+         if S.Homes (I).Used
+           and then S.Homes (I).X = X
+           and then S.Homes (I).Y = Y
+         then
+            return I;
+         end if;
+      end loop;
+      return 0;
+   end Home_At;
+
+   function Standable (S : State; X, Y : Coord) return Boolean is
+   begin
+      if Map.Walkable (Map.Terrain_At (S.Island_Seed, X, Y)) then
+         return True;
+      end if;
+      for I in Home_Id loop
+         if S.Homes (I).Used
+           and then abs (Integer (S.Homes (I).X) - Integer (X)) <= 1
+           and then abs (Integer (S.Homes (I).Y) - Integer (Y)) <= 1
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Standable;
+
+   function Home_Residents (S : State; H : Home_Id) return Natural is
+      N : Natural := 0;
+   begin
+      for I in Folk_Id loop
+         if S.Folk (I).Alive
+           and then S.Folk (I).Home = H
+           and then S.Folk (I).Age < Adult_Age
+         then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Home_Residents;
+
+   function Group_Population (S : State; G : Group_Id) return Natural is
+      N : Natural := 0;
+   begin
+      for I in Folk_Id loop
+         if S.Folk (I).Alive and then S.Folk (I).Group = G then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Group_Population;
+
+   function Group_Home_Count (S : State; G : Group_Id) return Natural is
+      N : Natural := 0;
+   begin
+      for I in Home_Id loop
+         if S.Homes (I).Used and then S.Homes (I).Group = G then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Group_Home_Count;
 
    procedure Reset
      (S           : out State;
@@ -110,10 +173,11 @@ package body Island.World is
          return;
       end if;
       By := Map.Terrain_At (S.Island_Seed, Coord (NX), Coord (NY));
-      if not Map.Walkable (By) then
+      if not Standable (S, Coord (NX), Coord (NY)) then
          Result := Blocked;
          return;
       end if;
+      if Home_At (S, Coord (NX), Coord (NY)) = 0 then
       for I in Folk_Id loop
          if I /= Player_Id and then S.Folk (I).Alive
            and then S.Folk (I).X = Coord (NX)
@@ -123,6 +187,7 @@ package body Island.World is
             return;
          end if;
       end loop;
+      end if;
       S.X := Coord (NX);
       S.Y := Coord (NY);
       S.Facing := Dir;
@@ -426,11 +491,38 @@ package body Island.World is
       return (Sum * 1000) / Count;
    end Average_Milli;
 
+   function Group_Average (S : State; G : Group_Id; Which : Trait_Query) return Natural is
+      Sum   : Natural := 0;
+      Count : Natural := 0;
+      Value : Natural;
+   begin
+      for I in Folk_Id loop
+         if S.Folk (I).Alive and then S.Folk (I).Group = G then
+            case Which is
+               when 1 =>
+                  Value := Natural (S.Folk (I).Speed);
+               when 2 =>
+                  Value := Natural (S.Folk (I).Sight);
+               when 3 =>
+                  Value := Natural (S.Folk (I).Metabolism);
+               when others =>
+                  Value := Natural (S.Folk (I).Fertility);
+            end case;
+            Sum := Sum + Value;
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count = 0 then
+         return 0;
+      end if;
+      return (Sum * 1000) / Count;
+   end Group_Average;
+
    procedure Write_Save (S : State; Buf : out String; Len : out Natural) is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 4");
+      Put_Text (Buf, Pos, "ai-island 5");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -519,6 +611,62 @@ package body Island.World is
          else
             Put_Char (Buf, Pos, '0');
          end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Group));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Home);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Sticks);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Stones);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Food);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for I in Home_Id loop
+         if S.Homes (I).Used then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         if S.Homes (I).Kind = Cave then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '2');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Homes (I).Group));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Homes (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Homes (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Homes (I).Capacity);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for I in Pile_Id loop
+         if S.Piles (I).Kind = Stick_Pile then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '2');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Piles (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Piles (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Piles (I).Count);
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for G in Group_Id loop
+         Put_Nat (Buf, Pos, S.Groups (G).Births);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Deaths);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Extinct_Turn);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Extinct_Cause);
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       Len := Pos - 1;
@@ -694,7 +842,7 @@ package body Island.World is
             end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 4" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 5" then
          Good := False;
       end if;
       if Good then
@@ -851,30 +999,129 @@ package body Island.World is
                Take_Nat (Buf, Pos, La, Empty2, 1_000, Good);
                Expect (Buf, Pos, La, ' ', Good);
                Take_Nat (Buf, Pos, La, Down2, 1, Good);
-               if Good and then Pos /= La + 1 then
-                  Good := False;
-               end if;
-               if Good and then Dir_Of (Face2, Dir2)
-                 and then Sp in Speed_T and then Si in Sight_T
-                 and then Me in Meta_T and then Fe in Fert_T
-               then
-                  Local.Folk (I).Alive := Alive_N = 1;
-                  Local.Folk (I).X := Coord (Xn2);
-                  Local.Folk (I).Y := Coord (Yn2);
-                  Local.Folk (I).Facing := Dir2;
-                  Local.Folk (I).Age := Age_N;
-                  Local.Folk (I).Speed := Sp;
-                  Local.Folk (I).Sight := Si;
-                  Local.Folk (I).Metabolism := Me;
-                  Local.Folk (I).Fertility := Fe;
-                  Local.Folk (I).Cool := Cool_N;
-                  Local.Folk (I).Belly.Full := Stomach.Fullness (Full2);
-                  Local.Folk (I).Belly.Empty_For := Empty2;
-                  Local.Folk (I).Belly.Collapsed := Down2 = 1;
-               else
-                  Good := False;
-               end if;
+               Expect (Buf, Pos, La, ' ', Good);
+               declare
+                  Group_N, Home_N, Stick_N, Stone_N, Food_N : Natural;
+               begin
+                  Take_Nat (Buf, Pos, La, Group_N, Group_Count, Good);
+                  Expect (Buf, Pos, La, ' ', Good);
+                  Take_Nat (Buf, Pos, La, Home_N, Max_Homes, Good);
+                  Expect (Buf, Pos, La, ' ', Good);
+                  Take_Nat (Buf, Pos, La, Stick_N, 8, Good);
+                  Expect (Buf, Pos, La, ' ', Good);
+                  Take_Nat (Buf, Pos, La, Stone_N, 6, Good);
+                  Expect (Buf, Pos, La, ' ', Good);
+                  Take_Nat (Buf, Pos, La, Food_N, 1, Good);
+                  if Good and then Pos /= La + 1 then
+                     Good := False;
+                  end if;
+                  if Good and then Dir_Of (Face2, Dir2)
+                    and then Sp in Speed_T and then Si in Sight_T
+                    and then Me in Meta_T and then Fe in Fert_T
+                    and then Group_N in Group_Id
+                  then
+                     Local.Folk (I).Alive := Alive_N = 1;
+                     Local.Folk (I).X := Coord (Xn2);
+                     Local.Folk (I).Y := Coord (Yn2);
+                     Local.Folk (I).Facing := Dir2;
+                     Local.Folk (I).Age := Age_N;
+                     Local.Folk (I).Speed := Sp;
+                     Local.Folk (I).Sight := Si;
+                     Local.Folk (I).Metabolism := Me;
+                     Local.Folk (I).Fertility := Fe;
+                     Local.Folk (I).Cool := Cool_N;
+                     Local.Folk (I).Belly.Full := Stomach.Fullness (Full2);
+                     Local.Folk (I).Belly.Empty_For := Empty2;
+                     Local.Folk (I).Belly.Collapsed := Down2 = 1;
+                     Local.Folk (I).Group := Group_N;
+                     Local.Folk (I).Home := Home_N;
+                     Local.Folk (I).Sticks := Stick_N;
+                     Local.Folk (I).Stones := Stone_N;
+                     Local.Folk (I).Food := Food_N;
+                  else
+                     Good := False;
+                  end if;
+               end;
             end loop;
+            if Good then
+               declare
+                  Hb, Lb : Natural;
+                  Used_N, Kind_N, Group_N, Xn3, Yn3, Cap_N : Natural;
+                  Pile_N, Px, Py, Count_N : Natural;
+                  Gb, Db, Et, Ec : Natural;
+               begin
+                  for I in Home_Id loop
+                     Next_Line (Buf, From, Hb, Lb, Good);
+                     Pos := Hb;
+                     Take_Nat (Buf, Pos, Lb, Used_N, 1, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Kind_N, 2, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Group_N, Group_Count, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Xn3, Coord'Last, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Yn3, Coord'Last, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Cap_N, 20, Good);
+                     if Good and then Pos = Lb + 1 and then Group_N in Group_Id then
+                        Local.Homes (I).Used := Used_N = 1;
+                        if Kind_N = 1 then
+                           Local.Homes (I).Kind := Cave;
+                        else
+                           Local.Homes (I).Kind := Hut;
+                        end if;
+                        Local.Homes (I).Group := Group_N;
+                        Local.Homes (I).X := Coord (Xn3);
+                        Local.Homes (I).Y := Coord (Yn3);
+                        Local.Homes (I).Capacity := Cap_N;
+                     else
+                        Good := False;
+                     end if;
+                  end loop;
+                  for I in Pile_Id loop
+                     Next_Line (Buf, From, Hb, Lb, Good);
+                     Pos := Hb;
+                     Take_Nat (Buf, Pos, Lb, Pile_N, 2, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Px, Coord'Last, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Py, Coord'Last, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Count_N, 100, Good);
+                     if Good and then Pos = Lb + 1 then
+                        if Pile_N = 1 then
+                           Local.Piles (I).Kind := Stick_Pile;
+                        else
+                           Local.Piles (I).Kind := Stone_Pile;
+                        end if;
+                        Local.Piles (I).X := Coord (Px);
+                        Local.Piles (I).Y := Coord (Py);
+                        Local.Piles (I).Count := Count_N;
+                     else
+                        Good := False;
+                     end if;
+                  end loop;
+                  for G in Group_Id loop
+                     Next_Line (Buf, From, Hb, Lb, Good);
+                     Pos := Hb;
+                     Take_Nat (Buf, Pos, Lb, Gb, 1_000_000, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Db, 1_000_000, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Et, 1_000_000, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     Take_Nat (Buf, Pos, Lb, Ec, 3, Good);
+                     if Good and then Pos = Lb + 1 then
+                        Local.Groups (G) :=
+                          (Births => Gb, Deaths => Db,
+                           Extinct_Turn => Et, Extinct_Cause => Ec);
+                     else
+                        Good := False;
+                     end if;
+                  end loop;
+               end;
+            end if;
          end;
          if Good and then From /= Buf'Last + 1 then
             Good := False;

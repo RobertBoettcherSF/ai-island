@@ -19,4 +19,19 @@ package Island.Folk is
      with Pre => World.Valid (S),
           Post => World.Valid (S);
 
+   --  1 stick, 2 stone, 3 food, 0 nothing.
+   procedure Player_Gather (S : in out World.State; Result : out Natural)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
+   --  1 built, 2 need materials, 3 cannot build here.
+   procedure Player_Build (S : in out World.State; Result : out Natural)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
+   --  1 fed, 2 no food, 3 no child here.
+   procedure Player_Feed (S : in out World.State; Result : out Natural)
+     with Pre => World.Valid (S),
+          Post => World.Valid (S);
+
 end Island.Folk;

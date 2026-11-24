@@ -72,6 +72,23 @@ mkdir -p obj/wasm docs
     --export=island_sample \
     --export=island_paint \
     --export=island_map_ptr \
+    --export=island_group_count \
+    --export=island_group_pop \
+    --export=island_group_births \
+    --export=island_group_deaths \
+    --export=island_group_homes \
+    --export=island_group_avg \
+    --export=island_group_extinct \
+    --export=island_group_cause \
+    --export=island_home_max \
+    --export=island_home_used \
+    --export=island_home_x \
+    --export=island_home_y \
+    --export=island_home_group \
+    --export=island_home_kind \
+    --export=island_home_residents \
+    --export=island_folk_group \
+    --export=island_folk_home \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \

@@ -1,3 +1,4 @@
+with Interfaces;
 with Island.Map;
 with Island.Stomach;
 with Island.Text;
@@ -22,12 +23,6 @@ package body Island.API is
          Ready := True;
       end if;
    end Ensure;
-
-   procedure Reset is
-   begin
-      World.Reset (The_State);
-      Ready := True;
-   end Reset;
 
    procedure Run
      (Command : String;
@@ -183,6 +178,282 @@ package body Island.API is
       return Grid_Size;
    end Height;
 
+   Max_Samples : constant := 128;
+
+   type Sample_Rec is record
+      Turn  : Natural := 0;
+      Pop   : Natural := 0;
+      Speed : Natural := 0;
+      Sight : Natural := 0;
+      Meta  : Natural := 0;
+      Fert  : Natural := 0;
+   end record;
+
+   Samples  : array (1 .. Max_Samples) of Sample_Rec := [others => <>];
+   N_Samples : Natural := 0;
+
+   procedure Note is
+   begin
+      if N_Samples > 0 and then Samples (N_Samples).Turn = The_State.Turn then
+         return;
+      end if;
+      if N_Samples >= Max_Samples then
+         return;
+      end if;
+      N_Samples := N_Samples + 1;
+      Samples (N_Samples) :=
+        (Turn  => The_State.Turn,
+         Pop   => World.Alive_Count (The_State),
+         Speed => World.Average_Milli (The_State, 1),
+         Sight => World.Average_Milli (The_State, 2),
+         Meta  => World.Average_Milli (The_State, 3),
+         Fert  => World.Average_Milli (The_State, 4));
+   end Note;
+
+   procedure Reset is
+   begin
+      World.Reset (The_State);
+      Ready := True;
+      N_Samples := 0;
+      Note;
+   end Reset;
+
+   procedure Simulate (Turns : Integer) is
+   begin
+      Ensure;
+      if N_Samples = 0 then
+         Note;
+      end if;
+      if Turns <= 0 then
+         return;
+      end if;
+      for Step in 1 .. Turns loop
+         World.Simulate (The_State, 1);
+         if The_State.Turn mod 20 = 0 then
+            Note;
+         end if;
+      end loop;
+   end Simulate;
+
+   function Population return Integer is
+   begin
+      Ensure;
+      return Integer (World.Alive_Count (The_State));
+   end Population;
+
+   function Births return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Births);
+   end Births;
+
+   function Deaths return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Deaths);
+   end Deaths;
+
+   function Turn return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Turn);
+   end Turn;
+
+   function Fullness return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Belly.Full);
+   end Fullness;
+
+   function Average (Which : Integer) return Integer is
+   begin
+      Ensure;
+      if Which not in World.Trait_Query then
+         return 0;
+      end if;
+      return Integer (World.Average_Milli (The_State, Which));
+   end Average;
+
+   function Folk_Max return Integer is
+   begin
+      return World.Max_Folk;
+   end Folk_Max;
+
+   function Known (Id : Integer) return Boolean is
+   begin
+      return Id in World.Folk_Id and then The_State.Folk (Id).Alive;
+   end Known;
+
+   function Folk_Alive (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if Known (Id) then
+         return 1;
+      end if;
+      return 0;
+   end Folk_Alive;
+
+   function Folk_X (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return -1;
+      end if;
+      return Integer (The_State.Folk (Id).X);
+   end Folk_X;
+
+   function Folk_Y (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return -1;
+      end if;
+      return Integer (The_State.Folk (Id).Y);
+   end Folk_Y;
+
+   function Folk_Age (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return The_State.Folk (Id).Age;
+   end Folk_Age;
+
+   function Folk_Full (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Belly.Full);
+   end Folk_Full;
+
+   function Folk_Speed (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Speed);
+   end Folk_Speed;
+
+   function Folk_Sight (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Sight);
+   end Folk_Sight;
+
+   function Folk_Meta (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Metabolism);
+   end Folk_Meta;
+
+   function Folk_Fert (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known (Id) then
+         return 0;
+      end if;
+      return Integer (The_State.Folk (Id).Fertility);
+   end Folk_Fert;
+
+   function Sample_Count return Integer is
+   begin
+      return N_Samples;
+   end Sample_Count;
+
+   Map_Bytes : array (0 .. Grid_Size * Grid_Size - 1) of Interfaces.Unsigned_8 :=
+     [others => 0];
+
+   function Cell_Index (X, Y : Coord) return Natural is
+   begin
+      return Integer (Y) * Grid_Size + Integer (X);
+   end Cell_Index;
+
+   procedure Paint is
+      Spot : Map.Spot;
+      Food : Natural;
+      Idx  : Natural;
+   begin
+      Ensure;
+      for Y in Coord loop
+         for X in Coord loop
+            Map_Bytes (Cell_Index (X, Y)) :=
+              Interfaces.Unsigned_8 (Terrain'Pos (Map.Terrain_At (X, Y)));
+         end loop;
+      end loop;
+      for I in Map.Bush_Index loop
+         Spot := Map.Bush (I);
+         Idx := Cell_Index (Spot.X, Spot.Y);
+         if The_State.Bush_Eaten (I) = 0
+           or else The_State.Turn >= The_State.Bush_Eaten (I) + Map.Regrow_Turns
+         then
+            Food := 1;
+         else
+            Food := 2;
+         end if;
+         Map_Bytes (Idx) := Interfaces.Unsigned_8
+           (Interfaces.Unsigned_8'Pos (Map_Bytes (Idx)) + Food * 8);
+      end loop;
+      for I in Map.Fish_Index loop
+         Spot := Map.Fish_At (I);
+         Idx := Cell_Index (Spot.X, Spot.Y);
+         Map_Bytes (Idx) := Interfaces.Unsigned_8
+           (Interfaces.Unsigned_8'Pos (Map_Bytes (Idx)) + 3 * 8);
+      end loop;
+      for I in The_State.Objects'Range loop
+         if The_State.Objects (I).On_Ground then
+            Idx := Cell_Index (The_State.Objects (I).X, The_State.Objects (I).Y);
+            case The_State.Objects (I).Kind is
+               when Stone =>
+                  Food := 1;
+               when Stick =>
+                  Food := 2;
+               when Shell =>
+                  Food := 3;
+            end case;
+            Map_Bytes (Idx) := Interfaces.Unsigned_8
+              (Interfaces.Unsigned_8'Pos (Map_Bytes (Idx)) + Food * 64);
+         end if;
+      end loop;
+   end Paint;
+
+   function Map_Ptr return Integer is
+   begin
+      return Address_As_Int (Map_Bytes'Address);
+   end Map_Ptr;
+
+   function Sample (Index, Field : Integer) return Integer is
+   begin
+      if Index < 1 or else Index > N_Samples then
+         return 0;
+      end if;
+      case Field is
+         when 0 =>
+            return Samples (Index).Turn;
+         when 1 =>
+            return Samples (Index).Pop;
+         when 2 =>
+            return Samples (Index).Speed;
+         when 3 =>
+            return Samples (Index).Sight;
+         when 4 =>
+            return Samples (Index).Meta;
+         when 5 =>
+            return Samples (Index).Fert;
+         when others =>
+            return 0;
+      end case;
+   end Sample;
+
    function Roundtrip return Boolean is
       Buf  : String (1 .. World.Save_Max);
       Len  : Natural;
@@ -249,8 +520,8 @@ package body Island.API is
          Stomach.Feed (L, Map.Fish_Gain);
          pragma Assert (L.Full = 100);
       end;
-      pragma Assert (Food (Map.Bushes (1).X, Map.Bushes (1).Y) = 1);
-      pragma Assert (Food (Map.Fish (1).X, Map.Fish (1).Y) = 3);
+      pragma Assert (Food (Map.Bush (1).X, Map.Bush (1).Y) = 1);
+      pragma Assert (Food (Map.Fish_At (1).X, Map.Fish_At (1).Y) = 3);
       return True;
    end Self_Check;
 

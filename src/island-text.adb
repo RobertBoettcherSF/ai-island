@@ -195,8 +195,12 @@ package body Island.Text is
       Xc   : Coord;
       Yc   : Coord;
    begin
-      for Y in S.Y - 2 .. S.Y + 2 loop
-         for X in S.X - 2 .. S.X + 2 loop
+      for Y in S.Y - S.Folk (World.Player_Id).Sight
+        .. S.Y + S.Folk (World.Player_Id).Sight
+      loop
+         for X in S.X - S.Folk (World.Player_Id).Sight
+           .. S.X + S.Folk (World.Player_Id).Sight
+         loop
             if X in Coord and then Y in Coord then
                Xc := Coord (X);
                Yc := Coord (Y);
@@ -264,8 +268,12 @@ package body Island.Text is
       Yc    : Coord;
    begin
       Add (B, ",""seen"":[");
-      for Y in S.Y - 2 .. S.Y + 2 loop
-         for X in S.X - 2 .. S.X + 2 loop
+      for Y in S.Y - S.Folk (World.Player_Id).Sight
+        .. S.Y + S.Folk (World.Player_Id).Sight
+      loop
+         for X in S.X - S.Folk (World.Player_Id).Sight
+           .. S.X + S.Folk (World.Player_Id).Sight
+         loop
             if X in Coord and then Y in Coord then
                if not First then
                   Add_Char (B, ',');
@@ -305,6 +313,44 @@ package body Island.Text is
       end loop;
       Add_Char (B, ']');
    end Add_Seen_Json;
+
+   procedure Add_Creatures (B : in out Builder; S : World.State) is
+      First : Boolean := True;
+      Sight : constant Integer := Integer (S.Folk (World.Player_Id).Sight);
+   begin
+      Add (B, ",""creatures"":[");
+      for I in World.Folk_Id loop
+         if I /= World.Player_Id and then S.Folk (I).Alive
+           and then abs (Integer (S.Folk (I).X) - Integer (S.X)) <= Sight
+           and then abs (Integer (S.Folk (I).Y) - Integer (S.Y)) <= Sight
+         then
+            if not First then
+               Add_Char (B, ',');
+            end if;
+            First := False;
+            Add (B, "{""id"":");
+            Add_Nat (B, I);
+            Add (B, ",""x"":");
+            Add_Nat (B, Natural (S.Folk (I).X));
+            Add (B, ",""y"":");
+            Add_Nat (B, Natural (S.Folk (I).Y));
+            Add (B, ",""age"":");
+            Add_Nat (B, S.Folk (I).Age);
+            Add (B, ",""speed"":");
+            Add_Nat (B, Natural (S.Folk (I).Speed));
+            Add (B, ",""sight"":");
+            Add_Nat (B, Natural (S.Folk (I).Sight));
+            Add (B, ",""metabolism"":");
+            Add_Nat (B, Natural (S.Folk (I).Metabolism));
+            Add (B, ",""fertility"":");
+            Add_Nat (B, Natural (S.Folk (I).Fertility));
+            Add (B, ",""fullness"":");
+            Add_Nat (B, Natural (S.Folk (I).Belly.Full));
+            Add_Char (B, '}');
+         end if;
+      end loop;
+      Add_Char (B, ']');
+   end Add_Creatures;
 
    procedure Add_Said_Json (B : in out Builder; S : World.State) is
    begin
@@ -538,6 +584,37 @@ package body Island.Text is
             Close_Cmd;
          end if;
          Emit (True);
+      elsif Same (Command (V1 .. V2), "world") then
+         if Has then
+            Fail_Bad ("world");
+            return;
+         end if;
+         if As_Text then
+            Add (B, "Population ");
+            Add_Nat (B, World.Alive_Count (S));
+            Add (B, ", births ");
+            Add_Nat (B, S.Births);
+            Add (B, ", deaths ");
+            Add_Nat (B, S.Deaths);
+            Add (B, ".");
+         else
+            Add (B, "{""ok"":true,""cmd"":""world"",""population"":");
+            Add_Nat (B, World.Alive_Count (S));
+            Add (B, ",""births"":");
+            Add_Nat (B, S.Births);
+            Add (B, ",""deaths"":");
+            Add_Nat (B, S.Deaths);
+            Add (B, ",""avg_speed"":");
+            Add_Nat (B, World.Average_Milli (S, 1));
+            Add (B, ",""avg_sight"":");
+            Add_Nat (B, World.Average_Milli (S, 2));
+            Add (B, ",""avg_metabolism"":");
+            Add_Nat (B, World.Average_Milli (S, 3));
+            Add (B, ",""avg_fertility"":");
+            Add_Nat (B, World.Average_Milli (S, 4));
+            Close_Cmd;
+         end if;
+         Emit (True);
       elsif Same (Command (V1 .. V2), "look") then
          if Has then
             Fail_Bad ("look");
@@ -557,6 +634,7 @@ package body Island.Text is
             Add_Place_Json (B, S);
             Add_Said_Json (B, S);
             Add_Seen_Json (B, S);
+            Add_Creatures (B, S);
             Close_Cmd;
          end if;
          Emit (True);

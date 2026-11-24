@@ -1,3 +1,5 @@
+with Island.Folk;
+
 package body Island.World is
 
    function Valid (S : State) return Boolean is
@@ -42,6 +44,16 @@ package body Island.World is
             return False;
          end if;
       end loop;
+      for I in Folk_Id loop
+         if S.Folk (I).Alive then
+            if not Map.Walkable (Map.Terrain_At (S.Folk (I).X, S.Folk (I).Y)) then
+               return False;
+            end if;
+            if not Stomach.Levels_Ok (S.Folk (I).Belly) then
+               return False;
+            end if;
+         end if;
+      end loop;
       return True;
    end Valid;
 
@@ -62,6 +74,7 @@ package body Island.World is
          S.Objects (I).Y := Map.Initial_Objects (I).Y;
          S.Objects (I).On_Ground := True;
       end loop;
+      Folk.Setup (S);
    end Reset;
 
    procedure Try_Move
@@ -93,6 +106,15 @@ package body Island.World is
          Result := Blocked;
          return;
       end if;
+      for I in Folk_Id loop
+         if I /= Player_Id and then S.Folk (I).Alive
+           and then S.Folk (I).X = Coord (NX)
+           and then S.Folk (I).Y = Coord (NY)
+         then
+            Result := Blocked;
+            return;
+         end if;
+      end loop;
       S.X := Coord (NX);
       S.Y := Coord (NY);
       S.Facing := Dir;
@@ -237,7 +259,7 @@ package body Island.World is
    function Food_At (S : State; X, Y : Coord) return Food is
    begin
       for I in Map.Bush_Index loop
-         if Map.Bushes (I).X = X and then Map.Bushes (I).Y = Y then
+         if Map.Bush (I).X = X and then Map.Bush (I).Y = Y then
             if Ripe (S.Bush_Eaten (I), S.Turn) then
                return Berries;
             else
@@ -246,7 +268,7 @@ package body Island.World is
          end if;
       end loop;
       for I in Map.Fish_Index loop
-         if Map.Fish (I).X = X and then Map.Fish (I).Y = Y then
+         if Map.Fish_At (I).X = X and then Map.Fish_At (I).Y = Y then
             return Fish;
          end if;
       end loop;
@@ -302,7 +324,7 @@ package body Island.World is
    procedure Mark_Bush (S : in out State; X, Y : Coord) is
    begin
       for I in Map.Bush_Index loop
-         if Map.Bushes (I).X = X and then Map.Bushes (I).Y = Y then
+         if Map.Bush (I).X = X and then Map.Bush (I).Y = Y then
             S.Bush_Eaten (I) := S.Turn;
             return;
          end if;
@@ -320,16 +342,81 @@ package body Island.World is
       if Is_Move and then Was_Weak then
          Turns := 2;
       end if;
-      Stomach.Tick (S.Belly, Turns, Carrying);
+      if not S.Belly.Collapsed then
+         Stomach.Tick (S.Belly, Turns, Carrying);
+      end if;
+      S.Folk (Player_Id).X := S.X;
+      S.Folk (Player_Id).Y := S.Y;
+      S.Folk (Player_Id).Facing := S.Facing;
+      S.Folk (Player_Id).Belly := S.Belly;
+      Folk.Others_Act (S);
+      Folk.After_Actions (S, Turns);
+      S.Belly := S.Folk (Player_Id).Belly;
+      if not S.Folk (Player_Id).Alive then
+         S.Belly.Collapsed := True;
+         S.Belly.Full := 0;
+      end if;
       pragma Assert (S.Turn <= Natural'Last - Natural (Turns));
       S.Turn := S.Turn + Natural (Turns);
    end Advance;
+
+   procedure Simulate (S : in out State; Turns : Positive) is
+   begin
+      for Step in 1 .. Turns loop
+         if S.Folk (Player_Id).Alive and then not S.Belly.Collapsed then
+            Folk.Player_Act (S);
+            Advance (S, False, False, S.Hand /= 0);
+         else
+            Folk.Others_Act (S);
+            Folk.After_Actions (S, 1);
+            S.Turn := S.Turn + 1;
+         end if;
+      end loop;
+   end Simulate;
+
+   function Alive_Count (S : State) return Natural is
+      N : Natural := 0;
+   begin
+      for I in Folk_Id loop
+         if S.Folk (I).Alive then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Alive_Count;
+
+   function Average_Milli (S : State; Which : Trait_Query) return Natural is
+      Sum   : Natural := 0;
+      Count : Natural := 0;
+      Value : Natural;
+   begin
+      for I in Folk_Id loop
+         if S.Folk (I).Alive then
+            case Which is
+               when 1 =>
+                  Value := Natural (S.Folk (I).Speed);
+               when 2 =>
+                  Value := Natural (S.Folk (I).Sight);
+               when 3 =>
+                  Value := Natural (S.Folk (I).Metabolism);
+               when others =>
+                  Value := Natural (S.Folk (I).Fertility);
+            end case;
+            Sum := Sum + Value;
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count = 0 then
+         return 0;
+      end if;
+      return (Sum * 1000) / Count;
+   end Average_Milli;
 
    procedure Write_Save (S : State; Buf : out String; Len : out Natural) is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 2");
+      Put_Text (Buf, Pos, "ai-island 3");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -376,6 +463,46 @@ package body Island.World is
          Put_Nat (Buf, Pos, S.Bush_Eaten (I));
       end loop;
       Put_Char (Buf, Pos, ASCII.LF);
+      Put_Nat (Buf, Pos, S.Births);
+      Put_Char (Buf, Pos, ' ');
+      Put_Nat (Buf, Pos, S.Deaths);
+      Put_Char (Buf, Pos, ASCII.LF);
+      for I in Folk_Id loop
+         if S.Folk (I).Alive then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).X));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Y));
+         Put_Char (Buf, Pos, ' ');
+         Put_Char (Buf, Pos, Face_Char (S.Folk (I).Facing));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Age);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Speed));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Sight));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Metabolism));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Fertility));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Cool);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, Natural (S.Folk (I).Belly.Full));
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Belly.Empty_For);
+         Put_Char (Buf, Pos, ' ');
+         if S.Folk (I).Belly.Collapsed then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
       Len := Pos - 1;
    end Write_Save;
 
@@ -522,10 +649,24 @@ package body Island.World is
       Next_Line (Buf, From, F7, L7, Good);
       Next_Line (Buf, From, F8, L8, Good);
       Next_Line (Buf, From, F9, L9, Good);
-      if Good and then From /= Buf'Last + 1 then
-         Good := False;
-      end if;
-      if Good and then Buf (F1 .. L1) /= "ai-island 2" then
+      declare
+         Fb, Lb : Natural;
+      begin
+         Next_Line (Buf, From, Fb, Lb, Good);
+         if Good then
+            Pos := Fb;
+            Take_Nat (Buf, Pos, Lb, Turn_N, 1_000_000, Good);
+            Expect (Buf, Pos, Lb, ' ', Good);
+            Take_Nat (Buf, Pos, Lb, Full_N, 1_000_000, Good);
+            if Good and then Pos = Lb + 1 then
+               Local.Births := Turn_N;
+               Local.Deaths := Full_N;
+            else
+               Good := False;
+            end if;
+         end if;
+      end;
+      if Good and then Buf (F1 .. L1) /= "ai-island 3" then
          Good := False;
       end if;
       if Good then
@@ -638,6 +779,83 @@ package body Island.World is
          end loop;
          if Good and then Pos /= L9 + 1 then
             Good := False;
+         end if;
+      end if;
+      if Good then
+         declare
+            Fa, La : Natural;
+            Alive_N, Xn2, Yn2, Age_N, Sp, Si, Me, Fe, Cool_N : Natural;
+            Full2, Empty2, Down2 : Natural;
+            Face2 : Character;
+            Dir2  : Direction;
+         begin
+            for I in Folk_Id loop
+               Next_Line (Buf, From, Fa, La, Good);
+               Pos := Fa;
+               Take_Nat (Buf, Pos, La, Alive_N, 1, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Xn2, Coord'Last, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Yn2, Coord'Last, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               if Good and then Pos <= La then
+                  Face2 := Buf (Pos);
+                  Pos := Pos + 1;
+               else
+                  Face2 := '?';
+                  Good := False;
+               end if;
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Age_N, 10_000, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Sp, 3, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Si, 4, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Me, 3, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Fe, 3, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Cool_N, 10_000, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Full2, Stomach.Max_Fullness, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Empty2, 1_000, Good);
+               Expect (Buf, Pos, La, ' ', Good);
+               Take_Nat (Buf, Pos, La, Down2, 1, Good);
+               if Good and then Pos /= La + 1 then
+                  Good := False;
+               end if;
+               if Good and then Dir_Of (Face2, Dir2)
+                 and then Sp in Speed_T and then Si in Sight_T
+                 and then Me in Meta_T and then Fe in Fert_T
+               then
+                  Local.Folk (I).Alive := Alive_N = 1;
+                  Local.Folk (I).X := Coord (Xn2);
+                  Local.Folk (I).Y := Coord (Yn2);
+                  Local.Folk (I).Facing := Dir2;
+                  Local.Folk (I).Age := Age_N;
+                  Local.Folk (I).Speed := Sp;
+                  Local.Folk (I).Sight := Si;
+                  Local.Folk (I).Metabolism := Me;
+                  Local.Folk (I).Fertility := Fe;
+                  Local.Folk (I).Cool := Cool_N;
+                  Local.Folk (I).Belly.Full := Stomach.Fullness (Full2);
+                  Local.Folk (I).Belly.Empty_For := Empty2;
+                  Local.Folk (I).Belly.Collapsed := Down2 = 1;
+               else
+                  Good := False;
+               end if;
+            end loop;
+         end;
+         if Good and then From /= Buf'Last + 1 then
+            Good := False;
+         end if;
+         if Good then
+            Local.X := Local.Folk (Player_Id).X;
+            Local.Y := Local.Folk (Player_Id).Y;
+            Local.Facing := Local.Folk (Player_Id).Facing;
+            Local.Belly := Local.Folk (Player_Id).Belly;
          end if;
       end if;
       if Good and then Valid (Local) then

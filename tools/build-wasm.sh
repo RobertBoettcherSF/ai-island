@@ -23,6 +23,7 @@ mkdir -p obj/wasm docs
   for F in \
     ../../src/island-map.adb \
     ../../src/island-stomach.adb \
+    ../../src/island-folk.adb \
     ../../src/island-world.adb \
     ../../src/island-text.adb \
     ../../src/island-api.adb \
@@ -47,6 +48,27 @@ mkdir -p obj/wasm docs
     --export=island_hand \
     --export=island_width \
     --export=island_height \
+    --export=island_simulate \
+    --export=island_population \
+    --export=island_births \
+    --export=island_deaths \
+    --export=island_turn \
+    --export=island_fullness \
+    --export=island_average \
+    --export=island_folk_max \
+    --export=island_folk_alive \
+    --export=island_folk_x \
+    --export=island_folk_y \
+    --export=island_folk_age \
+    --export=island_folk_full \
+    --export=island_folk_speed \
+    --export=island_folk_sight \
+    --export=island_folk_meta \
+    --export=island_folk_fert \
+    --export=island_sample_count \
+    --export=island_sample \
+    --export=island_paint \
+    --export=island_map_ptr \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \

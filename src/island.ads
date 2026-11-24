@@ -2,7 +2,7 @@
 -- the child packages, and they do not touch files or the browser.
 package Island is
 
-   Grid_Size : constant := 32;
+   Grid_Size : constant := 96;
    subtype Coord is Integer range 0 .. Grid_Size - 1;
 
    Max_Objects : constant := 3;
@@ -16,7 +16,7 @@ package Island is
    type Object_Kind is (Stone, Stick, Shell);
    type Terrain is (Water, Sand, Grass, Rock, Tree);
 
-   Reply_Max : constant := 4096;
+   Reply_Max : constant := 8192;
    subtype Reply_Buffer is String (1 .. Reply_Max);
 
    Command_Max : constant := 240;

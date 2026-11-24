@@ -29,13 +29,17 @@ package body Island.Stomach is
       return Status (L) = Weak;
    end Is_Weak;
 
-   procedure Tick (L : in out Levels; Turns : Positive; Carrying : Boolean) is
+   procedure Tick
+     (L        : in out Levels;
+      Turns    : Positive;
+      Carrying : Boolean;
+      Drain    : Positive := 1)
+   is
       Cost : Natural;
    begin
+      Cost := Natural (Drain);
       if Carrying then
-         Cost := 2;
-      else
-         Cost := 1;
+         Cost := Cost + 1;
       end if;
       if L.Full = 0 then
          L.Empty_For := L.Empty_For + Natural (Turns);

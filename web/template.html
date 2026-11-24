@@ -12,7 +12,7 @@
     color: #1b1916;
     font: 18px/1.45 Georgia, "Iowan Old Style", serif;
   }
-  main { max-width: 40rem; margin: 0 auto; padding: 12px 12px 32px; }
+  main { max-width: 52rem; margin: 0 auto; padding: 12px 12px 32px; }
   h1 { font-size: 1.6rem; margin: 0.2rem 0; }
   p, label { margin: 0.4rem 0; }
   a { color: #143a5a; }
@@ -34,12 +34,14 @@
   canvas {
     width: 100%;
     height: auto;
-    max-width: 512px;
+    max-width: 640px;
     background: #fff;
     border: 2px solid #1b1916;
     image-rendering: pixelated;
     display: block;
+    touch-action: none;
   }
+  #chart { max-width: 640px; height: 140px; }
   pre {
     white-space: pre-wrap;
     word-break: break-word;
@@ -57,7 +59,13 @@
   }
   #autoResult.pass { background: #e5f6ea; }
   #autoResult.fail { background: #fde8ea; }
-  #meter { height: 18px; border: 2px solid #1b1916; background: #fff; max-width: 512px; }
+  #inspect {
+    background: #fffdf8;
+    border: 2px solid #1b1916;
+    padding: 8px;
+    min-height: 3rem;
+  }
+  #meter { height: 18px; border: 2px solid #1b1916; background: #fff; max-width: 640px; }
   #meterFill { height: 100%; width: 100%; background: #2d6a3a; }
   #meter.hungry #meterFill { background: #c47b12; }
   #meter.weak #meterFill, #meter.collapsed #meterFill { background: #8d1d2c; }
@@ -71,7 +79,7 @@
 <body>
 <main>
   <h1>AI Island</h1>
-  <p>A small island you can walk by typing commands. The same words work in the terminal program <code>island</code>.</p>
+  <p>A 96 by 96 island with a small population. Drag to pan, scroll to zoom, and click a creature. The same commands work in the terminal program <code>island</code>.</p>
   <p id="banner" hidden>This page is not the latest build. Reload it.</p>
   <p id="crash" hidden>The last visit did not close cleanly. Debug can save a report of it.</p>
   <p id="where" aria-live="polite"></p>
@@ -79,7 +87,8 @@
     <div id="meterFill"></div>
   </div>
   <p id="hungerLine">Fullness 100, ok, turn 0.</p>
-  <canvas id="map" width="512" height="512" role="img" aria-label="A drawn island, 32 by 32 squares."></canvas>
+  <p id="popLine">Population 13.</p>
+  <canvas id="map" width="640" height="640" role="img" aria-label="The whole island, 96 by 96 squares. Drag to pan and scroll to zoom."></canvas>
   <ul class="legend">
     <li><span class="swatch" style="background:#3a7ca5"></span>water</li>
     <li><span class="swatch" style="background:#e4cb8c"></span>sand</li>
@@ -88,8 +97,24 @@
     <li><span class="swatch" style="background:#2d6a3a"></span>tree</li>
     <li><span class="swatch" style="background:#c0392b"></span>berries</li>
     <li><span class="swatch" style="background:#1a5276"></span>fish</li>
-    <li>stone is a circle, stick is a line, shell is an arc, you are the triangle</li>
+    <li>you are the triangle, other creatures are squares</li>
   </ul>
+  <p id="inspect">Click a creature to see its traits, age, and stomach.</p>
+  <canvas id="chart" width="640" height="140" role="img" aria-label="Population and average traits over time."></canvas>
+  <ul class="legend">
+    <li><span class="swatch" style="background:#1b1916"></span>population</li>
+    <li><span class="swatch" style="background:#c47b12"></span>speed</li>
+    <li><span class="swatch" style="background:#143a5a"></span>sight</li>
+    <li><span class="swatch" style="background:#8d1d2c"></span>metabolism</li>
+    <li><span class="swatch" style="background:#2d6a3a"></span>fertility</li>
+  </ul>
+  <div class="row">
+    <button type="button" id="go">Play</button>
+    <button type="button" id="halt">Pause</button>
+    <button type="button" id="speed1" aria-pressed="true">1x</button>
+    <button type="button" id="speed10" aria-pressed="false">10x</button>
+    <button type="button" id="speed100" aria-pressed="false">100x</button>
+  </div>
   <div class="row">
     <button type="button" id="auto">Auto</button>
     <button type="button" id="sound" aria-pressed="true">Sound on</button>
@@ -101,7 +126,7 @@
     <input id="cmd" name="cmd" maxlength="240" autocomplete="off" spellcheck="false" aria-describedby="hint">
     <button type="submit">Run</button>
   </form>
-  <p id="hint">Try <code>look</code>, <code>move N</code>, <code>eat</code>, or Auto. Auto gets hungry, eats berries, fishes with the stick, and must last 200 turns.</p>
+  <p id="hint">Try <code>look</code>, <code>world</code>, <code>move N</code>, or <code>eat</code>. Auto runs 2000 turns and passes if the population survives and a trait drifts.</p>
   <pre id="reply" aria-live="polite"></pre>
   <p id="stamp"></p>
   <p><a href="https://github.com/RobertBoettcherSF/ai-island#plug-in-your-ai">Plug in your AI</a> · <a href="https://github.com/RobertBoettcherSF/ai-island">source</a></p>
@@ -111,7 +136,6 @@
 const STAMP = "__STAMP__";
 const COMMIT = "__COMMIT__";
 const WASM = "__WASM_BASE64__";
-const CELL = 16;
 const COLORS = {0: "#3a7ca5", 1: "#e4cb8c", 2: "#6f8f4e", 3: "#7e7a74", 4: "#2d6a3a"};
 const store = localStorage;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -122,6 +146,17 @@ let autoState = "not-run";
 let autoDetail = "";
 let lastVitals = {fullness: 100, turn: 0, hunger: "ok", collapse: null};
 let runningAuto = false;
+let playing = false;
+let speed = 1;
+let selected = 0;
+let view = {x: 0, y: 0, scale: 6};
+let dragging = false;
+let dragMoved = false;
+let dragX = 0;
+let dragY = 0;
+let lastSimMs = 0;
+let lastDrawMs = 0;
+let frame100Ms = 0;
 const errors = [];
 const log = [];
 const crashedBefore = store.getItem("ai-island.clean") === "0";
@@ -169,82 +204,157 @@ function unlock() {
 }
 addEventListener("pointerdown", unlock, {once: false});
 
-function drawObject(ctx, code, x, y) {
-  const cx = x * CELL + CELL / 2;
-  const cy = y * CELL + CELL / 2;
-  ctx.save();
-  if (code === 1) {
-    ctx.fillStyle = "#2b2b2b";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (code === 2) {
-    ctx.strokeStyle = "#6b3f1d";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, cy + 4);
-    ctx.lineTo(cx + 5, cy - 4);
-    ctx.stroke();
-  } else if (code === 3) {
-    ctx.strokeStyle = "#f4f7f2";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy + 2, 5, Math.PI, 0);
-    ctx.stroke();
+function cellAt(px, py) {
+  const rect = map.getBoundingClientRect();
+  const sx = (px - rect.left) * (map.width / rect.width);
+  const sy = (py - rect.top) * (map.height / rect.height);
+  return {
+    x: Math.floor(view.x + sx / view.scale),
+    y: Math.floor(view.y + sy / view.scale)
+  };
+}
+function creatureAt(x, y) {
+  const n = ada.island_folk_max();
+  for (let i = 1; i <= n; i++) {
+    if (ada.island_folk_alive(i) && ada.island_folk_x(i) === x && ada.island_folk_y(i) === y) return i;
   }
-  ctx.restore();
+  return 0;
+}
+function showInspect() {
+  if (!selected || !ada.island_folk_alive(selected)) {
+    inspect.textContent = "Click a creature to see its traits, age, and stomach.";
+    return;
+  }
+  const who = selected === 1 ? "You" : "Creature " + selected;
+  inspect.textContent = who + " at " + ada.island_folk_x(selected) + "," + ada.island_folk_y(selected)
+    + ". Age " + ada.island_folk_age(selected)
+    + ", stomach " + ada.island_folk_full(selected)
+    + ". Speed " + ada.island_folk_speed(selected)
+    + ", sight " + ada.island_folk_sight(selected)
+    + ", metabolism " + ada.island_folk_meta(selected)
+    + ", fertility " + ada.island_folk_fert(selected) + ".";
 }
 function draw() {
   if (!ada) return;
-  const ctx = map.getContext("2d");
+  const t0 = performance.now();
+  ada.island_paint();
   const n = ada.island_width();
-  map.width = n * CELL;
-  map.height = ada.island_height() * CELL;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      ctx.fillStyle = COLORS[ada.island_cell(x, y)] || "#c0392b";
-      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-      const obj = ada.island_object(x, y);
-      if (obj > 0) drawObject(ctx, obj, x, y);
-      const food = ada.island_food(x, y);
+  const cells = new Uint8Array(ada.memory.buffer, ada.island_map_ptr(), n * n);
+  const ctx = map.getContext("2d");
+  ctx.fillStyle = "#d7e3ee";
+  ctx.fillRect(0, 0, map.width, map.height);
+  const x0 = Math.max(0, Math.floor(view.x));
+  const y0 = Math.max(0, Math.floor(view.y));
+  const x1 = Math.min(n - 1, Math.ceil(view.x + map.width / view.scale));
+  const y1 = Math.min(n - 1, Math.ceil(view.y + map.height / view.scale));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const packed = cells[y * n + x];
+      const sx = (x - view.x) * view.scale;
+      const sy = (y - view.y) * view.scale;
+      ctx.fillStyle = COLORS[packed & 7] || "#c0392b";
+      ctx.fillRect(sx, sy, view.scale + 0.5, view.scale + 0.5);
+      const food = (packed >> 3) & 7;
       if (food === 1) {
         ctx.fillStyle = "#c0392b";
-        ctx.fillRect(x * CELL + 4, y * CELL + 4, 8, 8);
+        ctx.fillRect(sx + view.scale * 0.25, sy + view.scale * 0.25, view.scale * 0.5, view.scale * 0.5);
       } else if (food === 2) {
         ctx.strokeStyle = "#6b3f1d";
-        ctx.strokeRect(x * CELL + 4, y * CELL + 4, 8, 8);
+        ctx.strokeRect(sx + view.scale * 0.25, sy + view.scale * 0.25, view.scale * 0.5, view.scale * 0.5);
       } else if (food === 3) {
         ctx.fillStyle = "#1a5276";
-        ctx.beginPath();
-        ctx.arc(x * CELL + CELL / 2, y * CELL + CELL / 2, 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(sx + view.scale * 0.3, sy + view.scale * 0.3, view.scale * 0.4, view.scale * 0.4);
+      }
+      const obj = packed >> 6;
+      if (obj > 0 && view.scale >= 4) {
+        ctx.fillStyle = obj === 2 ? "#6b3f1d" : "#2b2b2b";
+        ctx.fillRect(sx + 1, sy + 1, Math.max(2, view.scale * 0.35), Math.max(2, view.scale * 0.35));
       }
     }
   }
-  const x = ada.island_agent_x();
-  const y = ada.island_agent_y();
-  const f = ada.island_facing();
-  const cx = x * CELL + CELL / 2;
-  const cy = y * CELL + CELL / 2;
-  const d = 6;
-  const pts = [
-    [[0, -d], [d, d], [-d, d]],
-    [[d, 0], [-d, d], [-d, -d]],
-    [[0, d], [-d, -d], [d, -d]],
-    [[-d, 0], [d, -d], [d, d]]
-  ][f] || [[0, -d], [d, d], [-d, d]];
-  ctx.fillStyle = "#1b1916";
-  ctx.beginPath();
-  ctx.moveTo(cx + pts[0][0], cy + pts[0][1]);
-  ctx.lineTo(cx + pts[1][0], cy + pts[1][1]);
-  ctx.lineTo(cx + pts[2][0], cy + pts[2][1]);
-  ctx.closePath();
-  ctx.fill();
-  const faces = ["north", "east", "south", "west"];
-  const hands = ["empty", "a stone", "a stick", "a shell"];
+  const folk = ada.island_folk_max();
+  for (let i = 1; i <= folk; i++) {
+    if (!ada.island_folk_alive(i)) continue;
+    const x = ada.island_folk_x(i);
+    const y = ada.island_folk_y(i);
+    const sx = (x - view.x) * view.scale;
+    const sy = (y - view.y) * view.scale;
+    if (i === 1) {
+      ctx.fillStyle = "#1b1916";
+      ctx.beginPath();
+      ctx.moveTo(sx + view.scale * 0.5, sy + view.scale * 0.15);
+      ctx.lineTo(sx + view.scale * 0.85, sy + view.scale * 0.85);
+      ctx.lineTo(sx + view.scale * 0.15, sy + view.scale * 0.85);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      const speed = ada.island_folk_speed(i);
+      ctx.fillStyle = speed >= 3 ? "#8d1d2c" : speed === 2 ? "#c47b12" : "#143a5a";
+      const m = Math.max(2, view.scale * 0.55);
+      ctx.fillRect(sx + (view.scale - m) / 2, sy + (view.scale - m) / 2, m, m);
+    }
+    if (i === selected) {
+      ctx.strokeStyle = "#fffdf8";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + 1, sy + 1, view.scale - 2, view.scale - 2);
+    }
+  }
+  const ax = ada.island_agent_x();
+  const ay = ada.island_agent_y();
   map.setAttribute("aria-label",
-    "Island. You are at " + x + "," + y + " facing " + (faces[f] || "?") +
-    ", hand " + (hands[ada.island_hand()] || "?") + ".");
+    "Island, 96 by 96. You are at " + ax + "," + ay
+    + ". Population " + ada.island_population() + ".");
+  lastDrawMs = performance.now() - t0;
+  showInspect();
+}
+function drawChart() {
+  if (!ada) return;
+  const ctx = chart.getContext("2d");
+  const w = chart.width;
+  const h = chart.height;
+  ctx.fillStyle = "#fffdf8";
+  ctx.fillRect(0, 0, w, h);
+  const n = ada.island_sample_count();
+  if (n < 2) return;
+  const series = [
+    [1, "#1b1916", 36],
+    [2, "#c47b12", 4000],
+    [3, "#143a5a", 4000],
+    [4, "#8d1d2c", 4000],
+    [5, "#2d6a3a", 4000]
+  ];
+  for (const [field, color, scale] of series) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 1; i <= n; i++) {
+      const v = ada.island_sample(i, field) / scale;
+      const px = ((i - 1) / (n - 1)) * (w - 8) + 4;
+      const py = h - 6 - Math.max(0, Math.min(1, v)) * (h - 16);
+      if (i === 1) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+function refreshHud() {
+  const full = ada.island_fullness();
+  const turn = ada.island_turn();
+  meter.setAttribute("aria-valuenow", String(full));
+  meterFill.style.width = full + "%";
+  let hunger = "ok";
+  if (full === 0) hunger = "weak";
+  else if (full < 30) hunger = "hungry";
+  meter.className = hunger;
+  hungerLine.textContent = "Fullness " + full + ", " + hunger + ", turn " + turn + ".";
+  popLine.textContent = "Population " + ada.island_population()
+    + ", births " + ada.island_births()
+    + ", deaths " + ada.island_deaths()
+    + ". Average speed " + (ada.island_average(1) / 1000).toFixed(2)
+    + ", sight " + (ada.island_average(2) / 1000).toFixed(2)
+    + ", metabolism " + (ada.island_average(3) / 1000).toFixed(2)
+    + ", fertility " + (ada.island_average(4) / 1000).toFixed(2) + ".";
+  lastVitals = {fullness: full, turn: turn, hunger: hunger, collapse: null};
 }
 function showReply(command, reply) {
   log.push({command, reply});
@@ -264,6 +374,7 @@ function showReply(command, reply) {
     lastVitals = {fullness: obj.fullness, turn: obj.turn, hunger: obj.hunger,
       collapse: obj.reason === "collapsed" ? "collapsed" : (obj.hunger === "collapsed" ? "starved" : null)};
   }
+  refreshHud();
   return obj;
 }
 function replyEl() { return document.getElementById("reply"); }
@@ -279,150 +390,115 @@ function runCommand(line) {
   const len = ada.island_reply_len();
   const reply = new TextDecoder().decode(memory().slice(ptr, ptr + len));
   draw();
+  drawChart();
   return {reply, obj: showReply(line, reply)};
 }
 function setAuto(text, ok) {
   autoResult.textContent = text;
   autoResult.className = ok === true ? "pass" : ok === false ? "fail" : "";
-  if (ok === true) { autoState = "pass"; autoDetail = ""; }
+  if (ok === true) { autoState = "pass"; autoDetail = text; }
   else if (ok === false) { autoState = "fail"; autoDetail = text; }
 }
-function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-function autoFailed(reason) {
-  setAuto("Auto: fail — " + reason, false);
+function setSpeed(n) {
+  speed = n;
+  speed1.setAttribute("aria-pressed", n === 1 ? "true" : "false");
+  speed10.setAttribute("aria-pressed", n === 10 ? "true" : "false");
+  speed100.setAttribute("aria-pressed", n === 100 ? "true" : "false");
 }
-// Same policy as a hungry walker: berries first, then the stick, then fish,
-// and a patrol that changes direction. Coordinates match Island.Map.
-const BUSHES = [[18, 15], [12, 22], [24, 12], [14, 24]];
-const FISH = [[30, 17], [1, 22], [12, 30]];
-const FISH_STAND = {"30,17": [29, 17, "E"], "1,22": [2, 22, "W"], "12,30": [12, 29, "S"]};
-const STICK = [18, 16];
-const PATROL = [[12, 22], [24, 12], [14, 24], [29, 17], [10, 20], [22, 10], [8, 26], [20, 8], [26, 20]];
-const DELTA = {N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0]};
-const ORDER = ["N", "E", "S", "W"];
-function groundAt(x, y) {
-  if (x <= 1 || x >= 30 || y <= 1 || y >= 30) return "water";
-  if (x <= 4 || x >= 27 || y <= 4 || y >= 27) return "sand";
-  if ((x === 12 && y === 12) || (x === 20 && y === 18) || (x === 15 && y === 22)) return "rock";
-  if ((x === 10 && y === 10) || (x === 18 && y === 14) || (x === 14 && y === 20) || (x === 22 && y === 16) || (x === 11 && y === 18)) return "tree";
-  return "grass";
-}
-function canWalk(x, y) {
-  return x >= 0 && x <= 31 && y >= 0 && y <= 31 && (groundAt(x, y) === "sand" || groundAt(x, y) === "grass");
-}
-function stepToward(st, tx, ty) {
-  const options = [];
-  if (tx !== st.x) options.push(tx > st.x ? "E" : "W");
-  if (ty !== st.y) options.push(ty > st.y ? "S" : "N");
-  for (const d of ORDER) if (!options.includes(d)) options.push(d);
-  for (const d of options) {
-    const [dx, dy] = DELTA[d];
-    if (canWalk(st.x + dx, st.y + dy)) return "move " + d;
+function frame() {
+  if (playing && ada && !runningAuto) {
+    const t0 = performance.now();
+    ada.island_simulate(speed);
+    lastSimMs = performance.now() - t0;
+    if (speed === 100) frame100Ms = lastSimMs;
+    refreshHud();
+    draw();
+    drawChart();
   }
-  return "look";
+  requestAnimationFrame(frame);
 }
-function arrive(st, sx, sy, want, action) {
-  if (st.x === sx && st.y === sy && st.facing === want) return action;
-  if (st.x === sx && st.y === sy) {
-    const back = {N: "S", S: "N", E: "W", W: "E"}[want];
-    const [dx, dy] = DELTA[back];
-    if (canWalk(st.x + dx, st.y + dy)) return "move " + back;
-  }
-  return stepToward(st, sx, sy);
-}
-async function runAuto() {
+function runAuto() {
   if (!ada || runningAuto) return;
   runningAuto = true;
+  playing = false;
   auto.disabled = true;
   setAuto("Auto: running", null);
-  const eaten = [0, 0, 0, 0];
-  let ateBerry = false, ateFish = false, sawHungry = false, patrol = 0;
-  const dirs = new Set();
   try {
-    let got = runCommand("new");
-    if (!got.obj || !got.obj.ok) { autoFailed("new failed"); return; }
-    got = runCommand("look");
-    let st = got.obj;
-    for (let n = 0; n < 600; n++) {
-      if (!reduced && n % 2 === 0) await wait(40);
-      if (!st) { autoFailed("no reply"); return; }
-      if (st.hunger === "hungry" || st.hunger === "weak") sawHungry = true;
-      if (st.hunger === "collapsed" || st.reason === "collapsed") {
-        autoFailed("collapsed at turn " + st.turn);
-        return;
-      }
-      if (st.turn >= 200 && ateBerry && ateFish && sawHungry && dirs.size >= 4) {
-        setAuto("Auto: pass", true);
-        return;
-      }
-      let cmd;
-      if (!ateBerry && (st.fullness < 40 || st.hunger === "hungry" || st.hunger === "weak")) {
-        let best = null;
-        BUSHES.forEach((b, i) => {
-          if (eaten[i] !== 0 && st.turn < eaten[i] + 40) return;
-          const d = Math.abs(b[0] - st.x) + Math.abs(b[1] - st.y);
-          if (!best || d < best[0]) best = [d, i, b];
-        });
-        if (!best) cmd = stepToward(st, PATROL[patrol % PATROL.length][0], PATROL[patrol % PATROL.length][1]);
-        else {
-          const b = best[2];
-          cmd = arrive(st, b[0] - 1, b[1], "E", "eat");
-        }
-      } else if (ateBerry && st.hand !== "stick") {
-        cmd = (st.x === STICK[0] && st.y === STICK[1] && st.hand == null) ? "pick" : stepToward(st, STICK[0], STICK[1]);
-      } else if (st.hand === "stick" && st.fullness < 70) {
-        let best = null;
-        for (const f of FISH) {
-          const stand = FISH_STAND[f[0] + "," + f[1]];
-          const d = Math.abs(stand[0] - st.x) + Math.abs(stand[1] - st.y);
-          if (!best || d < best[0]) best = [d, stand];
-        }
-        cmd = arrive(st, best[1][0], best[1][1], best[1][2], "eat");
-      } else {
-        const goal = PATROL[patrol % PATROL.length];
-        if (st.x === goal[0] && st.y === goal[1]) patrol++;
-        const next = PATROL[patrol % PATROL.length];
-        cmd = stepToward(st, next[0], next[1]);
-      }
-      if (cmd.startsWith("move ")) dirs.add(cmd.slice(-1));
-      const face = st.facing;
-      const px = st.x, py = st.y;
-      got = runCommand(cmd);
-      st = got.obj;
-      if (st && st.cmd === "eat" && st.ok && st.food === "berries") {
-        ateBerry = true;
-        const d = DELTA[face];
-        const spot = [px + d[0], py + d[1]];
-        const idx = BUSHES.findIndex((b) => b[0] === spot[0] && b[1] === spot[1]);
-        if (idx >= 0) eaten[idx] = st.turn;
-      }
-      if (st && st.cmd === "eat" && st.ok && st.food === "fish") ateFish = true;
-    }
-    autoFailed("did not last 200 turns");
+    ada.island_reset();
+    const before = [1, 2, 3, 4].map((i) => ada.island_average(i));
+    const t0 = performance.now();
+    ada.island_simulate(2000);
+    const simMs = performance.now() - t0;
+    const after = [1, 2, 3, 4].map((i) => ada.island_average(i));
+    const pop = ada.island_population();
+    const drifted = before.some((v, i) => v !== after[i]);
+    refreshHud();
+    draw();
+    drawChart();
+    lastSimMs = simMs;
+    frame100Ms = simMs * 100 / 2000 + lastDrawMs;
+    const summary = "population " + pop
+      + ", births " + ada.island_births()
+      + ", deaths " + ada.island_deaths()
+      + ", speed " + before[0] + "->" + after[0]
+      + ", sight " + before[1] + "->" + after[1]
+      + ", metabolism " + before[2] + "->" + after[2]
+      + ", fertility " + before[3] + "->" + after[3]
+      + ", " + Math.round(simMs) + " ms for 2000 turns"
+      + ", about " + frame100Ms.toFixed(1) + " ms for 100 turns plus one redraw ("
+      + lastDrawMs.toFixed(1) + " ms)";
+    log.push({command: "simulate 2000", reply: summary});
+    if (pop > 0 && drifted) setAuto("Auto: pass — " + summary, true);
+    else setAuto("Auto: fail — " + summary, false);
   } catch (e) {
     errors.push(String(e));
-    autoFailed(String(e));
+    setAuto("Auto: fail — " + e, false);
   } finally {
     runningAuto = false;
     auto.disabled = false;
   }
 }
 function report() {
+  const samples = [];
+  if (ada) {
+    const n = ada.island_sample_count();
+    for (let i = 1; i <= n; i++) {
+      samples.push({
+        turn: ada.island_sample(i, 0),
+        population: ada.island_sample(i, 1),
+        speed: ada.island_sample(i, 2),
+        sight: ada.island_sample(i, 3),
+        metabolism: ada.island_sample(i, 4),
+        fertility: ada.island_sample(i, 5)
+      });
+    }
+  }
   return {
     schema: "ai-island-f9",
     version: STAMP,
     commit: COMMIT,
     browser: navigator.userAgent,
-    settings: {sound: soundOn, reducedMotion: reduced, language: "en-GB"},
+    settings: {sound: soundOn, reducedMotion: reduced, language: "en-GB", speed: speed},
     fps: null,
     errors: errors.slice(),
     commands: log.slice(),
     auto: autoState,
     autoDetail: autoDetail,
     fullness: lastVitals.fullness,
-    turn: lastVitals.turn,
+    turn: ada ? ada.island_turn() : lastVitals.turn,
     hunger: lastVitals.hunger,
     collapse: lastVitals.collapse,
+    population: ada ? ada.island_population() : null,
+    births: ada ? ada.island_births() : null,
+    deaths: ada ? ada.island_deaths() : null,
+    avgSpeed: ada ? ada.island_average(1) : null,
+    avgSight: ada ? ada.island_average(2) : null,
+    avgMetabolism: ada ? ada.island_average(3) : null,
+    avgFertility: ada ? ada.island_average(4) : null,
+    simulateMs: lastSimMs,
+    drawMs: lastDrawMs,
+    per100Ms: frame100Ms,
+    samples: samples,
     crash: crashedBefore ? {previous: true} : null
   };
 }
@@ -436,6 +512,43 @@ function downloadReport() {
 }
 window.aiIslandReport = report;
 
+map.addEventListener("pointerdown", (ev) => {
+  dragging = true;
+  dragMoved = false;
+  dragX = ev.clientX;
+  dragY = ev.clientY;
+  map.setPointerCapture(ev.pointerId);
+});
+map.addEventListener("pointermove", (ev) => {
+  if (!dragging) return;
+  const dx = ev.clientX - dragX;
+  const dy = ev.clientY - dragY;
+  if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+  const rect = map.getBoundingClientRect();
+  view.x -= dx * (map.width / rect.width) / view.scale;
+  view.y -= dy * (map.height / rect.height) / view.scale;
+  dragX = ev.clientX;
+  dragY = ev.clientY;
+  draw();
+});
+map.addEventListener("pointerup", (ev) => {
+  dragging = false;
+  if (!dragMoved && ada) {
+    const cell = cellAt(ev.clientX, ev.clientY);
+    selected = creatureAt(cell.x, cell.y);
+    draw();
+  }
+});
+map.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const next = ev.deltaY < 0 ? Math.min(28, view.scale * 1.2) : Math.max(4, view.scale / 1.2);
+  const cell = cellAt(ev.clientX, ev.clientY);
+  view.x = cell.x - (cell.x - view.x) * (view.scale / next);
+  view.y = cell.y - (cell.y - view.y) * (view.scale / next);
+  view.scale = next;
+  draw();
+}, {passive: false});
+
 sound.onclick = () => {
   unlock();
   soundOn = !soundOn;
@@ -444,6 +557,11 @@ sound.onclick = () => {
   sound.textContent = soundOn ? "Sound on" : "Sound off";
   blip();
 };
+go.onclick = () => { playing = true; };
+halt.onclick = () => { playing = false; };
+speed1.onclick = () => setSpeed(1);
+speed10.onclick = () => setSpeed(10);
+speed100.onclick = () => setSpeed(100);
 auto.onclick = () => { unlock(); runAuto(); };
 debug.onclick = () => downloadReport();
 play.onsubmit = (ev) => {
@@ -452,6 +570,7 @@ play.onsubmit = (ev) => {
   const line = cmd.value.trim();
   if (!line || !ada) return;
   blip();
+  playing = false;
   runCommand(line);
   cmd.value = "";
 };
@@ -493,7 +612,9 @@ WebAssembly.instantiate(bytes, {env: env, wasi_snapshot_preview1: env}).then((re
   ada = result.instance.exports;
   ada.island_reset();
   draw();
+  drawChart();
   runCommand("look");
+  requestAnimationFrame(frame);
 }).catch((e) => {
   errors.push(String(e));
   replyEl().textContent = "The island did not start: " + e;

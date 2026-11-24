@@ -35,13 +35,13 @@ package body Island.Text is
       V    : Natural := N;
       L    : Natural := 0;
    begin
-      pragma Assert (N <= 9999);
       if V = 0 then
          Add (B, "0");
          return;
       end if;
       while V > 0 loop
          L := L + 1;
+         pragma Assert (L <= Digs'Last);
          Digs (L) := Character'Val (Character'Pos ('0') + V mod 10);
          V := V / 10;
       end loop;
@@ -162,7 +162,7 @@ package body Island.Text is
       Add (B, ", facing ");
       Add_Dir_Word (B, S.Facing);
       Add (B, ", on ");
-      Add_Ground (B, Map.Terrain_At (S.X, S.Y));
+      Add_Ground (B, Map.Terrain_At (S.Island_Seed, S.X, S.Y));
       Add (B, ". ");
       if S.Hand = 0 then
          Add (B, "Your hand is empty.");
@@ -205,7 +205,7 @@ package body Island.Text is
                Xc := Coord (X);
                Yc := Coord (Y);
                Id := Object_Here (S, Xc, Yc);
-               Spot := Map.Terrain_At (Xc, Yc);
+               Spot := Map.Terrain_At (S.Island_Seed, Xc, Yc);
                declare
                   Here : constant World.Food := World.Food_At (S, Xc, Yc);
                begin
@@ -256,7 +256,7 @@ package body Island.Text is
       Add (B, ",""facing"":""");
       Add_Dir_Letter (B, S.Facing);
       Add (B, """,""ground"":""");
-      Add_Ground (B, Map.Terrain_At (S.X, S.Y));
+      Add_Ground (B, Map.Terrain_At (S.Island_Seed, S.X, S.Y));
       Add (B, """,""hand"":");
       Add_Hand_Json (B, S);
    end Add_Place_Json;
@@ -287,7 +287,7 @@ package body Island.Text is
                Add (B, ",""y"":");
                Add_Nat (B, Natural (Yc));
                Add (B, ",""ground"":""");
-               Add_Ground (B, Map.Terrain_At (Xc, Yc));
+               Add_Ground (B, Map.Terrain_At (S.Island_Seed, Xc, Yc));
                Add (B, """,""object"":");
                if Id = 0 then
                   Add (B, "null");
@@ -574,7 +574,12 @@ package body Island.Text is
             Fail_Bad ("new");
             return;
          end if;
-         World.Reset (S);
+         declare
+            Island_Seed : constant Map.Seed_Value := S.Island_Seed;
+            Pop_Seed    : constant Map.Seed_Value := S.Pop_Seed;
+         begin
+            World.Reset (S, Island_Seed, Pop_Seed);
+         end;
          if As_Text then
             Add (B, "A new island. ");
             Add_You (B, S);
@@ -590,7 +595,11 @@ package body Island.Text is
             return;
          end if;
          if As_Text then
-            Add (B, "Population ");
+            Add (B, "Island seed ");
+            Add_Nat (B, S.Island_Seed);
+            Add (B, ", population seed ");
+            Add_Nat (B, S.Pop_Seed);
+            Add (B, ". Population ");
             Add_Nat (B, World.Alive_Count (S));
             Add (B, ", births ");
             Add_Nat (B, S.Births);
@@ -598,7 +607,11 @@ package body Island.Text is
             Add_Nat (B, S.Deaths);
             Add (B, ".");
          else
-            Add (B, "{""ok"":true,""cmd"":""world"",""population"":");
+            Add (B, "{""ok"":true,""cmd"":""world"",""island"":");
+            Add_Nat (B, S.Island_Seed);
+            Add (B, ",""pop"":");
+            Add_Nat (B, S.Pop_Seed);
+            Add (B, ",""population"":");
             Add_Nat (B, World.Alive_Count (S));
             Add (B, ",""births"":");
             Add_Nat (B, S.Births);
@@ -663,7 +676,7 @@ package body Island.Text is
                   Add (B, ",");
                   Add_Nat (B, Natural (S.Y));
                   Add (B, ", on ");
-                  Add_Ground (B, Map.Terrain_At (S.X, S.Y));
+                  Add_Ground (B, Map.Terrain_At (S.Island_Seed, S.X, S.Y));
                   Add (B, ". ");
                   if S.Hand = 0 then
                      Add (B, "Your hand is empty.");

@@ -35,6 +35,9 @@ mkdir -p obj/wasm docs
   ar x "$T/lib/rts-native/adalib/libgnat.a" s-memcop.o s-memmov.o s-memset.o
   "$LD" --no-entry --allow-undefined --strip-all \
     --export=island_reset \
+    --export=island_reset_seeds \
+    --export=island_island_seed \
+    --export=island_pop_seed \
     --export=island_exec \
     --export=island_command_ptr \
     --export=island_reply_ptr \

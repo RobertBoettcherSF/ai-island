@@ -60,14 +60,19 @@ package Island.World is
       Belly      : Stomach.Levels;
       Turn       : Natural := 0;
       Bush_Eaten : Bush_Times := [others => 0];
-      Folk       : Folk_Array;
-      Births     : Natural := 0;
-      Deaths     : Natural := 0;
+      Folk        : Folk_Array;
+      Births      : Natural := 0;
+      Deaths      : Natural := 0;
+      Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
+      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed;
    end record;
 
    function Valid (S : State) return Boolean;
 
-   procedure Reset (S : out State)
+   procedure Reset
+     (S           : out State;
+      Island_Seed : Map.Seed_Value := Map.Default_Island_Seed;
+      Pop_Seed    : Map.Seed_Value := Map.Default_Pop_Seed)
      with Post =>
        Valid (S) and then Map.Layout_Ok
        and then S.X = Map.Start_X and then S.Y = Map.Start_Y
@@ -75,7 +80,9 @@ package Island.World is
        and then S.Said_Len = 0
        and then S.Turn = 0
        and then S.Belly.Full = Stomach.Max_Fullness
-       and then not S.Belly.Collapsed;
+       and then not S.Belly.Collapsed
+       and then S.Island_Seed = Island_Seed
+       and then S.Pop_Seed = Pop_Seed;
 
    type Move_Result is (Moved, Blocked, Off_Map);
 

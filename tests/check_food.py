@@ -70,6 +70,16 @@ def main():
             sys.exit("look failed")
     if last["turn"] != 71 or last["fullness"] != 29 or last["hunger"] != "hungry":
         sys.exit("countdown: " + json.dumps({k: last[k] for k in ("turn", "fullness", "hunger")}))
+
+    save3 = os.path.join(tmp, "seeds.save")
+    code, body = play(save3, "new")
+    code, body = play(save3, "world")
+    if body.get("island") != 539365668 or body.get("pop") != 539365668:
+        sys.exit("default seeds: " + json.dumps(body))
+    code, body = play(save3, "new", "--island", "42", "--pop", "7")
+    code, body = play(save3, "world")
+    if body.get("island") != 42 or body.get("pop") != 7 or body.get("population") != 13:
+        sys.exit("custom seeds: " + json.dumps(body))
     print("food smoke ok")
 
 

@@ -80,7 +80,7 @@ package body Island.API is
       if X not in Coord or else Y not in Coord then
          return -1;
       end if;
-      return Terrain'Pos (Map.Terrain_At (Coord (X), Coord (Y)));
+      return Terrain'Pos (Map.Terrain_At (The_State.Island_Seed, Coord (X), Coord (Y)));
    end Cell;
 
    function Object_At (X, Y : Integer) return Integer is
@@ -210,6 +210,14 @@ package body Island.API is
          Fert  => World.Average_Milli (The_State, 4));
    end Note;
 
+   function To_Seed (Value : Integer) return Map.Seed_Value is
+   begin
+      if Value < 0 then
+         return Map.Default_Island_Seed;
+      end if;
+      return Map.Seed_Value (Value);
+   end To_Seed;
+
    procedure Reset is
    begin
       World.Reset (The_State);
@@ -217,6 +225,26 @@ package body Island.API is
       N_Samples := 0;
       Note;
    end Reset;
+
+   procedure Reset_Seeds (Island_Seed, Pop_Seed : Integer) is
+   begin
+      World.Reset (The_State, To_Seed (Island_Seed), To_Seed (Pop_Seed));
+      Ready := True;
+      N_Samples := 0;
+      Note;
+   end Reset_Seeds;
+
+   function Island_Seed return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Island_Seed);
+   end Island_Seed;
+
+   function Pop_Seed return Integer is
+   begin
+      Ensure;
+      return Integer (The_State.Pop_Seed);
+   end Pop_Seed;
 
    procedure Simulate (Turns : Integer) is
    begin
@@ -387,11 +415,12 @@ package body Island.API is
       for Y in Coord loop
          for X in Coord loop
             Map_Bytes (Cell_Index (X, Y)) :=
-              Interfaces.Unsigned_8 (Terrain'Pos (Map.Terrain_At (X, Y)));
+              Interfaces.Unsigned_8
+                (Terrain'Pos (Map.Terrain_At (The_State.Island_Seed, X, Y)));
          end loop;
       end loop;
       for I in Map.Bush_Index loop
-         Spot := Map.Bush (I);
+         Spot := Map.Bush (The_State.Island_Seed, I);
          Idx := Cell_Index (Spot.X, Spot.Y);
          if The_State.Bush_Eaten (I) = 0
            or else The_State.Turn >= The_State.Bush_Eaten (I) + Map.Regrow_Turns
@@ -404,7 +433,7 @@ package body Island.API is
            (Interfaces.Unsigned_8'Pos (Map_Bytes (Idx)) + Food * 8);
       end loop;
       for I in Map.Fish_Index loop
-         Spot := Map.Fish_At (I);
+         Spot := Map.Fish_At (The_State.Island_Seed, I);
          Idx := Cell_Index (Spot.X, Spot.Y);
          Map_Bytes (Idx) := Interfaces.Unsigned_8
            (Interfaces.Unsigned_8'Pos (Map_Bytes (Idx)) + 3 * 8);
@@ -491,7 +520,9 @@ package body Island.API is
       pragma Assert (Cell (0, Grid_Size) = -1);
       for Y in Coord loop
          for X in Coord loop
-            pragma Assert (Cell (X, Y) = Terrain'Pos (Map.Terrain_At (X, Y)));
+            pragma Assert
+              (Cell (X, Y) = Terrain'Pos
+                 (Map.Terrain_At (Map.Default_Island_Seed, X, Y)));
          end loop;
       end loop;
       pragma Assert (Roundtrip);
@@ -520,8 +551,14 @@ package body Island.API is
          Stomach.Feed (L, Map.Fish_Gain);
          pragma Assert (L.Full = 100);
       end;
-      pragma Assert (Food (Map.Bush (1).X, Map.Bush (1).Y) = 1);
-      pragma Assert (Food (Map.Fish_At (1).X, Map.Fish_At (1).Y) = 3);
+      pragma Assert
+        (Food
+           (Map.Bush (Map.Default_Island_Seed, 1).X,
+            Map.Bush (Map.Default_Island_Seed, 1).Y) = 1);
+      pragma Assert
+        (Food
+           (Map.Fish_At (Map.Default_Island_Seed, 1).X,
+            Map.Fish_At (Map.Default_Island_Seed, 1).Y) = 3);
       return True;
    end Self_Check;
 

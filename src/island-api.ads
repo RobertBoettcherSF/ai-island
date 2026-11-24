@@ -5,6 +5,15 @@ package Island.API is
    procedure Reset
      with Export, Convention => C, External_Name => "island_reset";
 
+   procedure Reset_Seeds (Island_Seed, Pop_Seed : Integer)
+     with Export, Convention => C, External_Name => "island_reset_seeds";
+
+   function Island_Seed return Integer
+     with Export, Convention => C, External_Name => "island_island_seed";
+
+   function Pop_Seed return Integer
+     with Export, Convention => C, External_Name => "island_pop_seed";
+
    procedure Run
      (Command : String;
       Reply   : out Reply_Buffer;

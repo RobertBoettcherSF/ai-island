@@ -12,14 +12,18 @@ After this is on `main`, the page is [https://robertboettchersf.github.io/ai-isl
 
 A commit-pinned copy is `https://raw.githack.com/RobertBoettcherSF/ai-island/<commit>/docs/index.html`.
 
-The map shows the whole island. Drag to pan and scroll to zoom. Click a creature to see its traits, age, and stomach. A small chart plots population and average traits. **Play**, **Pause**, and **1x / 10x / 100x** run the built-in brains. **Auto** runs 2000 turns and passes when the population is still alive and at least one average trait has drifted. The line under the buttons says `Auto: pass` or `Auto: fail`. **Debug** (or the F9 key) downloads a small JSON report: the version, the commit, the browser, population, births, deaths, average traits, the Auto result, and how long 100 turns took. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
+The map shows the whole island. Drag to pan and scroll to zoom. Click a creature to see its traits, age, and stomach. A small chart plots population and average traits. **Play**, **Pause**, and **1x / 10x / 100x** run the built-in brains, including while Auto is running. **Auto** starts a run from the seeds in the address bar and the button becomes **Stop**. Stop finishes the current turn, pauses, and downloads `ai-island-run.json` (version, commit, seeds, turns, population, births, deaths, traits at the start and the end, a sample every 100 turns, and the last commands). **Debug** (or the F9 key) downloads a small JSON report with the same seeds. **Sound on** plays a short click; click it to turn sound off. The page follows the reduced-motion setting. The language is English (`en-GB`) only in this version.
+
+The island seed sets the ground and the food. The population seed sets the starting creatures. Both default to `539365668`, which is the 0.3 island. Change the numbers, or press **Random**, and the address becomes `?island=42&pop=7`. Opening that address starts the same island.
 
 ## Play in the terminal
 
 ```sh
 make
 ./bin/island new
+./bin/island new --island 42 --pop 7
 ./bin/island look
+./bin/island world
 ./bin/island move N
 ./bin/island pick
 ./bin/island place
@@ -44,14 +48,14 @@ make ADA_DRIVER=gcc-12
 
 | Command | What it does |
 | --- | --- |
-| `new` | Start the island again. |
+| `new` | Start the island again. `new --island N --pop M` chooses the two seeds. |
 | `look` | Where you are, which way you face, what is in your hand, the squares you can see, and the creatures in that view. |
 | `move N` | Step north, east, south, or west. `E`, `S`, and `W` work the same way. `north` is also accepted. |
 | `pick` | Pick up the stone, stick, or shell on your square. Your hand holds one thing. |
 | `place` | Put the thing in your hand on your square, if the square is empty. |
 | `eat` | Eat the berries or the fish in front of you. Fish need the stick. |
 | `say "text"` | Remember a short note. Plain letters, digits, and spaces, up to 80 characters. |
-| `world` | Population, births, deaths, and average traits. This does not spend a turn. |
+| `world` | The two seeds, population, births, deaths, and average traits. This does not spend a turn. |
 
 Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `occupied`, `unknown command`, `bad command`, `no world`, `bad save`, `text too long`, and `text not plain`.
 
@@ -76,7 +80,7 @@ If ./bin/island does not exist, run `make` first. GNAT and gprbuild must already
 
 Commands, one per run:
 
-./bin/island new
+./bin/island new --island 42 --pop 7
 ./bin/island look
 ./bin/island move N
 ./bin/island move E
@@ -88,7 +92,7 @@ Commands, one per run:
 ./bin/island world
 ./bin/island say "a short note"
 
-Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, fullness, hunger, turn, the squares you can see, and the nearby creatures. `world` shows the population and average traits and does not spend a turn. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. Berries are eaten from the bush in front of you. Fish need the stick. Hunger falls every action, faster while you carry something, and faster if your metabolism is high. At 0 you are weak, and after 20 more turns without food you collapse. Other creatures eat, look for a mate, and can have children. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
+Each command prints one JSON object. Trust `ok`. On failure, read `reason` and try a different command. `look` shows your x, y, facing, hand, fullness, hunger, turn, the squares you can see, and the nearby creatures. `world` shows both seeds, the population, and the average traits, and does not spend a turn. `new --island N --pop M` starts that island. The defaults are island 539365668 and pop 539365668. You can carry one object. Water, rock, and trees block movement. Sand and grass do not. Berries are eaten from the bush in front of you. Fish need the stick. Hunger falls every action, faster while you carry something, and faster if your metabolism is high. At 0 you are weak, and after 20 more turns without food you collapse. Other creatures eat, look for a mate, and can have children. State is kept in `island.save` in the current directory. Start with `./bin/island new` if a command says `no world`.
 
 Your goal is to stay alive. Do not follow a script. Eat when you need to, and keep going.
 ```
@@ -118,7 +122,7 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. The same seeds produce the same world after 2000 turns, and a different island seed produces a different island. `ldd bin/island` must not mention `libgnat`.
 
 The browser build is separate and does not download a compiler:
 
@@ -134,11 +138,11 @@ The zip for a local run:
 make zip
 ```
 
-Unpack `zips/ai-island-v0.3.zip`. It becomes `ai-island-v0.3/`.
+Unpack `zips/ai-island-v0.3.1.zip`. It becomes `ai-island-v0.3.1/`.
 
 ```sh
-cd ai-island-v0.3
-./island new
+cd ai-island-v0.3.1
+./island new --island 42 --pop 7
 ./island look
 ./island world
 ```

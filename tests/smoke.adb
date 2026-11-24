@@ -1,6 +1,7 @@
 with Ada.Text_IO;
 with Island.API;
 with Island.Folk;
+with Island.Map;
 with Island.Stomach;
 with Island.World;
 use type Island.Direction;
@@ -120,5 +121,34 @@ begin
       pragma Assert (Island.World.Alive_Count (W) > 0);
       pragma Assert (W.Births >= 1);
       pragma Assert (A1 /= B1 or else A2 /= B2 or else A3 /= B3 or else A4 /= B4);
+
+      declare
+         use type Island.World.State;
+         use type Island.Map.Spot;
+         Again : Island.World.State;
+         Other : Island.World.State;
+         Changed : Boolean := False;
+      begin
+         Island.World.Reset (Again);
+         Island.World.Simulate (Again, 2000);
+         pragma Assert (Again = W);
+         Island.World.Reset (Other, 42, Island.Map.Default_Pop_Seed);
+         for Y in Island.Coord loop
+            for X in Island.Coord loop
+               if Island.Map.Terrain_At (42, X, Y)
+                 /= Island.Map.Terrain_At (Island.Map.Default_Island_Seed, X, Y)
+               then
+                  Changed := True;
+                  exit;
+               end if;
+            end loop;
+            exit when Changed;
+         end loop;
+         pragma Assert (Changed);
+         pragma Assert
+           (Island.Map.Bush (42, 1) /= Island.Map.Bush (Island.Map.Default_Island_Seed, 1)
+            or else Island.Map.Fish_At (42, 1)
+              /= Island.Map.Fish_At (Island.Map.Default_Island_Seed, 1));
+      end;
    end;
 end Smoke;

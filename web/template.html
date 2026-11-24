@@ -28,6 +28,8 @@
   button[aria-pressed="true"] { background: #1b1916; color: #f6f1e7; }
   input { padding: 8px 10px; width: 100%; box-sizing: border-box; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .row label { display: flex; gap: 6px; align-items: center; }
+  .row input[type="number"] { width: 11rem; }
   form { display: flex; flex-wrap: wrap; gap: 8px; }
   form input { flex: 1 1 12rem; }
   :focus-visible { outline: 3px solid #143a5a; outline-offset: 2px; }
@@ -109,6 +111,11 @@
     <li><span class="swatch" style="background:#2d6a3a"></span>fertility</li>
   </ul>
   <div class="row">
+    <label for="islandSeed">Island <input id="islandSeed" type="number" min="0" max="2147483647" value="539365668"></label>
+    <label for="popSeed">Population <input id="popSeed" type="number" min="0" max="2147483647" value="539365668"></label>
+    <button type="button" id="randomSeeds">Random</button>
+  </div>
+  <div class="row">
     <button type="button" id="go">Play</button>
     <button type="button" id="halt">Pause</button>
     <button type="button" id="speed1" aria-pressed="true">1x</button>
@@ -126,7 +133,7 @@
     <input id="cmd" name="cmd" maxlength="240" autocomplete="off" spellcheck="false" aria-describedby="hint">
     <button type="submit">Run</button>
   </form>
-  <p id="hint">Try <code>look</code>, <code>world</code>, <code>move N</code>, or <code>eat</code>. Auto runs 2000 turns and passes if the population survives and a trait drifts.</p>
+  <p id="hint">Try <code>look</code>, <code>world</code>, <code>move N</code>, or <code>eat</code>. Auto runs until you press Stop, then downloads <code>ai-island-run.json</code>. The same island and population seeds in the address reproduce the run.</p>
   <pre id="reply" aria-live="polite"></pre>
   <p id="stamp"></p>
   <p><a href="https://github.com/RobertBoettcherSF/ai-island#plug-in-your-ai">Plug in your AI</a> · <a href="https://github.com/RobertBoettcherSF/ai-island">source</a></p>
@@ -148,6 +155,17 @@ let lastVitals = {fullness: 100, turn: 0, hunger: "ok", collapse: null};
 let runningAuto = false;
 let playing = false;
 let speed = 1;
+let autoOn = false;
+let stopAfterTurn = false;
+let autoRun = null;
+const DEFAULT_SEED = 539365668;
+const yieldChannel = new MessageChannel();
+let yieldWait = null;
+yieldChannel.port1.onmessage = () => {
+  const resume = yieldWait;
+  yieldWait = null;
+  if (resume) resume();
+};
 let selected = 0;
 let view = {x: 0, y: 0, scale: 6};
 let dragging = false;
@@ -406,7 +424,7 @@ function setSpeed(n) {
   speed100.setAttribute("aria-pressed", n === 100 ? "true" : "false");
 }
 function frame() {
-  if (playing && ada && !runningAuto) {
+  if (playing && ada && !autoOn) {
     const t0 = performance.now();
     ada.island_simulate(speed);
     lastSimMs = performance.now() - t0;
@@ -417,46 +435,125 @@ function frame() {
   }
   requestAnimationFrame(frame);
 }
-function runAuto() {
-  if (!ada || runningAuto) return;
-  runningAuto = true;
-  playing = false;
-  auto.disabled = true;
-  setAuto("Auto: running", null);
+function clampSeed(text) {
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < 0 || n > 2147483647) return DEFAULT_SEED;
+  return n;
+}
+function currentTraits() {
+  return {
+    speed: ada.island_average(1),
+    sight: ada.island_average(2),
+    metabolism: ada.island_average(3),
+    fertility: ada.island_average(4)
+  };
+}
+function yieldTurn() {
+  return new Promise((resolve) => {
+    yieldWait = resolve;
+    yieldChannel.port2.postMessage(0);
+  });
+}
+function applySeeds(island, pop) {
+  islandSeed.value = String(island);
+  popSeed.value = String(pop);
+  const url = new URL(location.href);
+  url.searchParams.set("island", String(island));
+  url.searchParams.set("pop", String(pop));
+  history.replaceState(null, "", url);
+  if (!ada) return;
+  ada.island_reset_seeds(island, pop);
+  selected = 0;
+  refreshHud();
+  draw();
+  drawChart();
+}
+function noteHistory() {
+  const turn = ada.island_turn();
+  if (!autoRun || turn === 0 || turn % 100 !== 0) return;
+  const last = autoRun.history[autoRun.history.length - 1];
+  if (last && last.turn === turn) return;
+  autoRun.history.push({
+    turn: turn,
+    population: ada.island_population(),
+    speed: ada.island_average(1),
+    sight: ada.island_average(2),
+    metabolism: ada.island_average(3),
+    fertility: ada.island_average(4)
+  });
+}
+function downloadRun(file) {
+  const blob = new Blob([JSON.stringify(file, null, 1)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ai-island-run.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function finishAuto() {
+  const end = currentTraits();
+  const file = {
+    version: STAMP,
+    commit: COMMIT,
+    island: autoRun.island,
+    pop: autoRun.pop,
+    totalTurns: ada.island_turn(),
+    population: ada.island_population(),
+    births: ada.island_births(),
+    deaths: ada.island_deaths(),
+    start: autoRun.start,
+    end: end,
+    history: autoRun.history,
+    commands: log.slice()
+  };
+  window.aiIslandLastRun = file;
+  downloadRun(file);
+  autoOn = false;
+  stopAfterTurn = false;
+  runningAuto = false;
+  auto.textContent = "Auto";
+  autoState = "stopped";
+  autoDetail = "stopped after " + file.totalTurns + " turns";
+  setAuto("Auto: stopped after " + file.totalTurns + " turns", null);
+  refreshHud();
+  draw();
+  drawChart();
+}
+async function pump() {
   try {
-    ada.island_reset();
-    const before = [1, 2, 3, 4].map((i) => ada.island_average(i));
-    const t0 = performance.now();
-    ada.island_simulate(2000);
-    const simMs = performance.now() - t0;
-    const after = [1, 2, 3, 4].map((i) => ada.island_average(i));
-    const pop = ada.island_population();
-    const drifted = before.some((v, i) => v !== after[i]);
-    refreshHud();
-    draw();
-    drawChart();
-    lastSimMs = simMs;
-    frame100Ms = simMs * 100 / 2000 + lastDrawMs;
-    const summary = "population " + pop
-      + ", births " + ada.island_births()
-      + ", deaths " + ada.island_deaths()
-      + ", speed " + before[0] + "->" + after[0]
-      + ", sight " + before[1] + "->" + after[1]
-      + ", metabolism " + before[2] + "->" + after[2]
-      + ", fertility " + before[3] + "->" + after[3]
-      + ", " + Math.round(simMs) + " ms for 2000 turns"
-      + ", about " + frame100Ms.toFixed(1) + " ms for 100 turns plus one redraw ("
-      + lastDrawMs.toFixed(1) + " ms)";
-    log.push({command: "simulate 2000", reply: summary});
-    if (pop > 0 && drifted) setAuto("Auto: pass — " + summary, true);
-    else setAuto("Auto: fail — " + summary, false);
+    while (autoOn && !stopAfterTurn) {
+      ada.island_simulate(1);
+      noteHistory();
+      const turn = ada.island_turn();
+      if (turn % speed === 0 || stopAfterTurn) {
+        refreshHud();
+        draw();
+        drawChart();
+      }
+      if (stopAfterTurn) break;
+      await yieldTurn();
+    }
   } catch (e) {
     errors.push(String(e));
-    setAuto("Auto: fail — " + e, false);
-  } finally {
-    runningAuto = false;
-    auto.disabled = false;
+    autoDetail = String(e);
   }
+  if (autoOn) finishAuto();
+}
+function startAuto() {
+  if (!ada || autoOn) return;
+  playing = false;
+  runningAuto = true;
+  stopAfterTurn = false;
+  const island = clampSeed(islandSeed.value);
+  const pop = clampSeed(popSeed.value);
+  applySeeds(island, pop);
+  autoRun = {island: island, pop: pop, start: currentTraits(), history: []};
+  autoOn = true;
+  auto.textContent = "Stop";
+  autoState = "running";
+  setAuto("Auto: running", null);
+  log.push({command: "auto", reply: "start island " + island + " pop " + pop});
+  pump();
 }
 function report() {
   const samples = [];
@@ -491,6 +588,8 @@ function report() {
     population: ada ? ada.island_population() : null,
     births: ada ? ada.island_births() : null,
     deaths: ada ? ada.island_deaths() : null,
+    island: ada ? ada.island_island_seed() : null,
+    pop: ada ? ada.island_pop_seed() : null,
     avgSpeed: ada ? ada.island_average(1) : null,
     avgSight: ada ? ada.island_average(2) : null,
     avgMetabolism: ada ? ada.island_average(3) : null,
@@ -562,7 +661,24 @@ halt.onclick = () => { playing = false; };
 speed1.onclick = () => setSpeed(1);
 speed10.onclick = () => setSpeed(10);
 speed100.onclick = () => setSpeed(100);
-auto.onclick = () => { unlock(); runAuto(); };
+auto.onclick = () => {
+  unlock();
+  if (!ada) return;
+  if (!autoOn) startAuto();
+  else stopAfterTurn = true;
+};
+islandSeed.addEventListener("change", () => {
+  if (autoOn) return;
+  applySeeds(clampSeed(islandSeed.value), clampSeed(popSeed.value));
+});
+popSeed.addEventListener("change", () => {
+  if (autoOn) return;
+  applySeeds(clampSeed(islandSeed.value), clampSeed(popSeed.value));
+});
+randomSeeds.onclick = () => {
+  if (autoOn) return;
+  applySeeds(Math.floor(Math.random() * 2147483647), Math.floor(Math.random() * 2147483647));
+};
 debug.onclick = () => downloadReport();
 play.onsubmit = (ev) => {
   ev.preventDefault();
@@ -610,9 +726,10 @@ const env = new Proxy({
 const bytes = Uint8Array.from(atob(WASM), (c) => c.charCodeAt(0));
 WebAssembly.instantiate(bytes, {env: env, wasi_snapshot_preview1: env}).then((result) => {
   ada = result.instance.exports;
-  ada.island_reset();
-  draw();
-  drawChart();
+  const query = new URLSearchParams(location.search);
+  applySeeds(
+    query.has("island") ? clampSeed(query.get("island")) : DEFAULT_SEED,
+    query.has("pop") ? clampSeed(query.get("pop")) : DEFAULT_SEED);
   runCommand("look");
   requestAnimationFrame(frame);
 }).catch((e) => {

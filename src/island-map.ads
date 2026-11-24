@@ -1,10 +1,11 @@
 -- Fixed island from one seed. Terrain is a function of the coordinates,
 -- so a save file does not store the ground.
-with Interfaces;
-
 package Island.Map is
 
-   Seed : constant Interfaces.Unsigned_32 := 16#2026_1124#;
+   --  The 0.3 island. Both seeds default to this, and either one can change.
+   subtype Seed_Value is Natural;
+   Default_Island_Seed : constant Seed_Value := 16#2026_1124#;
+   Default_Pop_Seed    : constant Seed_Value := 16#2026_1124#;
 
    Start_X : constant Coord := 48;
    Start_Y : constant Coord := 48;
@@ -32,11 +33,11 @@ package Island.Map is
       2 => (Kind => Stick, X => Stick_X, Y => Stick_Y),
       3 => (Kind => Shell, X => Shell_X, Y => Shell_Y)];
 
-   function Terrain_At (X, Y : Coord) return Terrain;
+   function Terrain_At (Seed : Seed_Value; X, Y : Coord) return Terrain;
 
    function Walkable (Ground : Terrain) return Boolean;
 
-   function Shallow (X, Y : Coord) return Boolean;
+   function Shallow (Seed : Seed_Value; X, Y : Coord) return Boolean;
 
    Grove_Count : constant := 8;
    subtype Grove_Index is Integer range 1 .. Grove_Count;
@@ -62,13 +63,13 @@ package Island.Map is
       7 => (X => 36, Y => 74),
       8 => (X => 62, Y => 78)];
 
-   function Bush (I : Bush_Index) return Spot;
+   function Bush (Seed : Seed_Value; I : Bush_Index) return Spot;
 
-   function Fish_At (I : Fish_Index) return Spot;
+   function Fish_At (Seed : Seed_Value; I : Fish_Index) return Spot;
 
    Npc_Total : constant := 12;
    subtype Npc_Index is Integer range 1 .. Npc_Total;
-   function Npc_Home (N : Npc_Index) return Spot;
+   function Npc_Home (Seed : Seed_Value; N : Npc_Index) return Spot;
 
    Berry_Gain   : constant := 25;
    Fish_Gain    : constant := 40;

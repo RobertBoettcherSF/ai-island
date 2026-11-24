@@ -89,6 +89,14 @@ mkdir -p obj/wasm docs
     --export=island_home_residents \
     --export=island_folk_group \
     --export=island_folk_home \
+    --export=island_folk_scout \
+    --export=island_folk_marker \
+    --export=island_group_trust \
+    --export=island_group_trades \
+    --export=island_group_in \
+    --export=island_group_out \
+    --export=island_group_allele \
+    --export=island_home_store \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \

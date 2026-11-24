@@ -609,6 +609,131 @@ package body Island.API is
       return The_State.Folk (Id).Home;
    end Folk_Home;
 
+   function Folk_Scout (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if Known (Id) and then The_State.Folk (Id).Scout then
+         return 1;
+      end if;
+      return 0;
+   end Folk_Scout;
+
+   function Folk_Marker (Id : Integer) return Integer is
+   begin
+      Ensure;
+      if Known (Id)
+        and then (The_State.Folk (Id).Col_A = 1
+                  or else The_State.Folk (Id).Col_B = 1)
+      then
+         return 1;
+      end if;
+      return 0;
+   end Folk_Marker;
+
+   function Group_Trust (A, B : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (A) or else not Known_Group (B) then
+         return 0;
+      end if;
+      return Integer (The_State.Trust (A) (B));
+   end Group_Trust;
+
+   function Group_Trades (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Trades);
+   end Group_Trades;
+
+   function Group_In (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Migrants_In);
+   end Group_In;
+
+   function Group_Out (G : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Group (G) then
+         return 0;
+      end if;
+      return Integer (The_State.Groups (G).Migrants_Out);
+   end Group_Out;
+
+   function Group_Allele (G, Gene : Integer) return Integer is
+      High  : Natural := 0;
+      Total : Natural := 0;
+      Left  : Natural;
+      Right : Natural;
+   begin
+      Ensure;
+      if not Known_Group (G) or else Gene not in 1 .. 5 then
+         return 0;
+      end if;
+      for I in World.Folk_Id loop
+         if The_State.Folk (I).Alive and then The_State.Folk (I).Group = G then
+            case Gene is
+               when 1 =>
+                  Left := The_State.Folk (I).Sp_A;
+                  Right := The_State.Folk (I).Sp_B;
+               when 2 =>
+                  Left := The_State.Folk (I).Si_A;
+                  Right := The_State.Folk (I).Si_B;
+               when 3 =>
+                  Left := The_State.Folk (I).Me_A;
+                  Right := The_State.Folk (I).Me_B;
+               when 4 =>
+                  Left := The_State.Folk (I).Fe_A;
+                  Right := The_State.Folk (I).Fe_B;
+               when others =>
+                  Left := The_State.Folk (I).Col_A;
+                  Right := The_State.Folk (I).Col_B;
+            end case;
+            Total := Total + 2;
+            if Gene = 5 then
+               High := High + Left + Right;
+            else
+               if Left >= 2 then
+                  High := High + 1;
+               end if;
+               if Right >= 2 then
+                  High := High + 1;
+               end if;
+            end if;
+         end if;
+      end loop;
+      if Total = 0 then
+         return 0;
+      end if;
+      return Integer ((High * 1000) / Total);
+   end Group_Allele;
+
+   function Home_Store (H, Kind : Integer) return Integer is
+   begin
+      Ensure;
+      if not Known_Home (H) then
+         return 0;
+      end if;
+      case Kind is
+         when 1 =>
+            return Integer (The_State.Homes (H).Berries);
+         when 2 =>
+            return Integer (The_State.Homes (H).Fish);
+         when 3 =>
+            return Integer (The_State.Homes (H).Sticks);
+         when 4 =>
+            return Integer (The_State.Homes (H).Stones);
+         when others =>
+            return 0;
+      end case;
+   end Home_Store;
+
    function Sample (Index, Field : Integer) return Integer is
    begin
       if Index < 1 or else Index > N_Samples then

@@ -5,7 +5,7 @@ with Island.Stomach;
 
 package Island.World is
 
-   Save_Max : constant := 16384;
+   Save_Max : constant := 32768;
 
    --  The 0.3.1 run pinned at 35 because only 36 slots existed and the
    --  player's slot is never reused. Homes, not this array, limit births.
@@ -22,6 +22,9 @@ package Island.World is
    Home_Capacity : constant := 4;
    Max_Piles : constant := 8;
    subtype Pile_Id is Integer range 1 .. Max_Piles;
+   Max_Notes : constant := 12;
+   subtype Note_Id is Integer range 1 .. Max_Notes;
+   Trust_Max : constant := 12;
 
    subtype Speed_T is Integer range 1 .. 3;
    subtype Sight_T is Integer range 2 .. 4;
@@ -45,6 +48,19 @@ package Island.World is
       Sticks     : Natural := 0;
       Stones     : Natural := 0;
       Food       : Natural := 0;
+      Fish       : Natural := 0;
+      Scout      : Boolean := False;
+      Migrate    : Natural := 0;
+      Sp_A       : Natural := 1;
+      Sp_B       : Natural := 1;
+      Si_A       : Natural := 2;
+      Si_B       : Natural := 2;
+      Me_A       : Natural := 1;
+      Me_B       : Natural := 1;
+      Fe_A       : Natural := 2;
+      Fe_B       : Natural := 2;
+      Col_A      : Natural := 0;
+      Col_B      : Natural := 0;
    end record;
 
    type Folk_Array is array (Folk_Id) of Folk_Rec;
@@ -72,6 +88,10 @@ package Island.World is
       X        : Coord := 0;
       Y        : Coord := 0;
       Capacity : Natural := Home_Capacity;
+      Berries  : Natural := 0;
+      Fish     : Natural := 0;
+      Sticks   : Natural := 0;
+      Stones   : Natural := 0;
    end record;
 
    type Home_Array is array (Home_Id) of Home_Rec;
@@ -88,12 +108,32 @@ package Island.World is
    type Pile_Array is array (Pile_Id) of Pile_Rec;
 
    --  Extinct_Cause: 0 none, 1 starvation, 2 old age, 3 no space.
+   type From_Array is array (Group_Id) of Natural;
+
    type Group_Rec is record
       Births         : Natural := 0;
       Deaths         : Natural := 0;
       Extinct_Turn   : Natural := 0;
       Extinct_Cause  : Natural := 0;
+      Trades         : Natural := 0;
+      Migrants_In    : Natural := 0;
+      Migrants_Out   : Natural := 0;
+      Came_From      : From_Array := [others => 0];
    end record;
+
+   type Note_Kind is (Note_Food, Note_Home, Note_Stick, Note_Stone);
+
+   type Note_Rec is record
+      Known : Boolean := False;
+      Kind  : Note_Kind := Note_Food;
+      X     : Coord := 0;
+      Y     : Coord := 0;
+   end record;
+
+   type Note_Row is array (Note_Id) of Note_Rec;
+   type Note_Book is array (Group_Id) of Note_Row;
+   type Trust_Row is array (Group_Id) of Natural;
+   type Trust_Table is array (Group_Id) of Trust_Row;
 
    type Group_Array is array (Group_Id) of Group_Rec;
 
@@ -116,6 +156,8 @@ package Island.World is
       Homes       : Home_Array;
       Piles       : Pile_Array;
       Groups      : Group_Array;
+      Trust       : Trust_Table := [others => [others => 2]];
+      Notes       : Note_Book;
    end record;
 
    function Standable (S : State; X, Y : Coord) return Boolean;

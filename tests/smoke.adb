@@ -146,6 +146,100 @@ begin
       pragma Assert (W.Births = 0);
 
       Island.World.Reset (W);
+      W.X := 30;
+      W.Y := 30;
+      W.Folk (1).Sticks := 4;
+      W.Folk (1).Food := 0;
+      W.Folk (3).X := 31;
+      W.Folk (3).Y := 30;
+      W.Folk (3).Group := 2;
+      W.Folk (3).Food := 1;
+      W.Folk (3).Sticks := 0;
+      W.Folk (3).Age := 160;
+      Island.Folk.Player_Trade (W, Before);
+      pragma Assert (Before = 1);
+      pragma Assert (W.Folk (1).Food = 1);
+      pragma Assert (W.Trust (1) (2) > 2);
+
+      Island.World.Reset (W);
+      W.Folk (2).Group := 2;
+      W.Folk (2).Migrate := 1;
+      W.Folk (2).X := 18;
+      W.Folk (2).Y := 19;
+      W.Folk (2).Age := 160;
+      Island.Folk.Others_Act (W);
+      pragma Assert (W.Folk (2).Group = 1);
+      pragma Assert (W.Groups (1).Migrants_In = 1);
+      pragma Assert (W.Groups (1).Came_From (2) = 1);
+
+      Island.World.Reset (W);
+      W.Trust (1) (2) := 8;
+      W.Trust (2) (1) := 8;
+      W.Folk (2).X := 40;
+      W.Folk (2).Y := 40;
+      W.Folk (3).X := 41;
+      W.Folk (3).Y := 40;
+      W.Folk (2).Group := 1;
+      W.Folk (3).Group := 2;
+      W.Folk (2).Age := 160;
+      W.Folk (3).Age := 160;
+      W.Folk (2).Belly.Full := 95;
+      W.Folk (3).Belly.Full := 95;
+      W.Folk (2).Cool := 0;
+      W.Folk (3).Cool := 0;
+      for I in Island.World.Folk_Id loop
+         if I > 3 and then W.Folk (I).Age >= 150 then
+            W.Folk (I).Cool := 40;
+            W.Folk (I).Belly.Full := 40;
+         end if;
+      end loop;
+      Island.Folk.After_Actions (W, 1);
+      pragma Assert (W.Births = 1);
+      declare
+         Child : Integer := 0;
+      begin
+         for I in Island.World.Folk_Id loop
+            if W.Folk (I).Alive and then W.Folk (I).Age <= 1 then
+               Child := I;
+            end if;
+         end loop;
+         pragma Assert (Child /= 0);
+         pragma Assert (W.Folk (Child).Group = 1);
+      end;
+
+      declare
+         WW : constant Island.Folk.Color_Pair := (Left => 1, Right => 1);
+         RR : constant Island.Folk.Color_Pair := (Left => 0, Right => 0);
+         F1 : Island.Folk.Color_Pair;
+         Kid : Island.Folk.Color_Pair;
+         Hom : Natural := 0;
+         Het : Natural := 0;
+         Rec : Natural := 0;
+         N   : constant Natural := 256;
+      begin
+         for I in 0 .. 15 loop
+            F1 := Island.Folk.Cross_Color (WW, RR, 99, I);
+            pragma Assert
+              ((F1.Left = 1 and then F1.Right = 0)
+               or else (F1.Left = 0 and then F1.Right = 1));
+         end loop;
+         F1 := (Left => 1, Right => 0);
+         for I in 0 .. N - 1 loop
+            Kid := Island.Folk.Cross_Color (F1, F1, 99, I);
+            if Kid.Left = 1 and then Kid.Right = 1 then
+               Hom := Hom + 1;
+            elsif Kid.Left = 0 and then Kid.Right = 0 then
+               Rec := Rec + 1;
+            else
+               Het := Het + 1;
+            end if;
+         end loop;
+         pragma Assert (Hom > N / 8 and then Hom < N / 2);
+         pragma Assert (Rec > N / 8 and then Rec < N / 2);
+         pragma Assert (Het > N / 4 and then Het < (N * 3) / 4);
+      end;
+
+      Island.World.Reset (W);
       W.Folk (4).Belly.Full := 0;
       W.Folk (4).Belly.Empty_For := 19;
       Island.Stomach.Tick (W.Folk (4).Belly, 1, False);
@@ -213,6 +307,24 @@ begin
            (Island.Map.Bush (42, 1) /= Island.Map.Bush (Island.Map.Default_Island_Seed, 1)
             or else Island.Map.Fish_At (42, 1)
               /= Island.Map.Fish_At (Island.Map.Default_Island_Seed, 1));
+      end;
+      Island.World.Reset (W);
+      Island.World.Simulate (W, 20000);
+      declare
+         Alive_Groups : Natural := 0;
+      begin
+         for G in Island.World.Group_Id loop
+            Ada.Text_IO.Put_Line
+              ("20k group" & Integer'Image (G)
+               & " pop" & Natural'Image (Island.World.Group_Population (W, G))
+               & " extinct" & Natural'Image (W.Groups (G).Extinct_Turn)
+               & " cause" & Natural'Image (W.Groups (G).Extinct_Cause));
+            if Island.World.Group_Population (W, G) > 0 then
+               Alive_Groups := Alive_Groups + 1;
+            end if;
+         end loop;
+         --  v0.4 kept 3 of 4 groups alive after 20000 turns.
+         pragma Assert (Alive_Groups > 3);
       end;
    end;
 end Smoke;

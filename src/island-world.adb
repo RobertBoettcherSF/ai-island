@@ -522,7 +522,7 @@ package body Island.World is
       Pos : Natural := 1;
    begin
       Buf := [others => ' '];
-      Put_Text (Buf, Pos, "ai-island 5");
+      Put_Text (Buf, Pos, "ai-island 6");
       Put_Char (Buf, Pos, ASCII.LF);
       Put_Nat (Buf, Pos, Natural (S.X));
       Put_Char (Buf, Pos, ' ');
@@ -621,6 +621,36 @@ package body Island.World is
          Put_Nat (Buf, Pos, S.Folk (I).Stones);
          Put_Char (Buf, Pos, ' ');
          Put_Nat (Buf, Pos, S.Folk (I).Food);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Fish);
+         Put_Char (Buf, Pos, ' ');
+         if S.Folk (I).Scout then
+            Put_Char (Buf, Pos, '1');
+         else
+            Put_Char (Buf, Pos, '0');
+         end if;
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Migrate);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Sp_A);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Sp_B);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Si_A);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Si_B);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Me_A);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Me_B);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Fe_A);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Fe_B);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Col_A);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Folk (I).Col_B);
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       for I in Home_Id loop
@@ -643,6 +673,14 @@ package body Island.World is
          Put_Nat (Buf, Pos, Natural (S.Homes (I).Y));
          Put_Char (Buf, Pos, ' ');
          Put_Nat (Buf, Pos, S.Homes (I).Capacity);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Homes (I).Berries);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Homes (I).Fish);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Homes (I).Sticks);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Homes (I).Stones);
          Put_Char (Buf, Pos, ASCII.LF);
       end loop;
       for I in Pile_Id loop
@@ -667,7 +705,42 @@ package body Island.World is
          Put_Nat (Buf, Pos, S.Groups (G).Extinct_Turn);
          Put_Char (Buf, Pos, ' ');
          Put_Nat (Buf, Pos, S.Groups (G).Extinct_Cause);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Trades);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Migrants_In);
+         Put_Char (Buf, Pos, ' ');
+         Put_Nat (Buf, Pos, S.Groups (G).Migrants_Out);
+         for From in Group_Id loop
+            Put_Char (Buf, Pos, ' ');
+            Put_Nat (Buf, Pos, S.Groups (G).Came_From (From));
+         end loop;
          Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for A in Group_Id loop
+         for B in Group_Id loop
+            if B > Group_Id'First then
+               Put_Char (Buf, Pos, ' ');
+            end if;
+            Put_Nat (Buf, Pos, S.Trust (A) (B));
+         end loop;
+         Put_Char (Buf, Pos, ASCII.LF);
+      end loop;
+      for G in Group_Id loop
+         for I in Note_Id loop
+            if S.Notes (G) (I).Known then
+               Put_Char (Buf, Pos, '1');
+            else
+               Put_Char (Buf, Pos, '0');
+            end if;
+            Put_Char (Buf, Pos, ' ');
+            Put_Nat (Buf, Pos, Note_Kind'Pos (S.Notes (G) (I).Kind));
+            Put_Char (Buf, Pos, ' ');
+            Put_Nat (Buf, Pos, Natural (S.Notes (G) (I).X));
+            Put_Char (Buf, Pos, ' ');
+            Put_Nat (Buf, Pos, Natural (S.Notes (G) (I).Y));
+            Put_Char (Buf, Pos, ASCII.LF);
+         end loop;
       end loop;
       Len := Pos - 1;
    end Write_Save;
@@ -842,7 +915,7 @@ package body Island.World is
             end;
          end if;
       end;
-      if Good and then Buf (F1 .. L1) /= "ai-island 5" then
+      if Good and then Buf (F1 .. L1) /= "ai-island 6" then
          Good := False;
       end if;
       if Good then
@@ -1012,6 +1085,55 @@ package body Island.World is
                   Take_Nat (Buf, Pos, La, Stone_N, 6, Good);
                   Expect (Buf, Pos, La, ' ', Good);
                   Take_Nat (Buf, Pos, La, Food_N, 1, Good);
+                  Expect (Buf, Pos, La, ' ', Good);
+                  declare
+                     Fish_N, Scout_N, Mig_N : Natural;
+                     SA, SB, IA, IB, MA, MB, FA, FB, CA, CB : Natural;
+                  begin
+                     Take_Nat (Buf, Pos, La, Fish_N, 4, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, Scout_N, 1, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, Mig_N, Group_Count, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, SA, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, SB, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, IA, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, IB, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, MA, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, MB, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, FA, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, FB, 3, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, CA, 1, Good);
+                     Expect (Buf, Pos, La, ' ', Good);
+                     Take_Nat (Buf, Pos, La, CB, 1, Good);
+                     if Good and then Pos /= La + 1 then
+                        Good := False;
+                     end if;
+                     if Good then
+                        Local.Folk (I).Fish := Fish_N;
+                        Local.Folk (I).Scout := Scout_N = 1;
+                        Local.Folk (I).Migrate := Mig_N;
+                        Local.Folk (I).Sp_A := SA;
+                        Local.Folk (I).Sp_B := SB;
+                        Local.Folk (I).Si_A := IA;
+                        Local.Folk (I).Si_B := IB;
+                        Local.Folk (I).Me_A := MA;
+                        Local.Folk (I).Me_B := MB;
+                        Local.Folk (I).Fe_A := FA;
+                        Local.Folk (I).Fe_B := FB;
+                        Local.Folk (I).Col_A := CA;
+                        Local.Folk (I).Col_B := CB;
+                     end if;
+                  end;
                   if Good and then Pos /= La + 1 then
                      Good := False;
                   end if;
@@ -1064,6 +1186,24 @@ package body Island.World is
                      Take_Nat (Buf, Pos, Lb, Yn3, Coord'Last, Good);
                      Expect (Buf, Pos, Lb, ' ', Good);
                      Take_Nat (Buf, Pos, Lb, Cap_N, 20, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     declare
+                        Ber_N, Fish_H, Stk_H, Sto_H : Natural;
+                     begin
+                        Take_Nat (Buf, Pos, Lb, Ber_N, 100, Good);
+                        Expect (Buf, Pos, Lb, ' ', Good);
+                        Take_Nat (Buf, Pos, Lb, Fish_H, 100, Good);
+                        Expect (Buf, Pos, Lb, ' ', Good);
+                        Take_Nat (Buf, Pos, Lb, Stk_H, 100, Good);
+                        Expect (Buf, Pos, Lb, ' ', Good);
+                        Take_Nat (Buf, Pos, Lb, Sto_H, 100, Good);
+                        if Good then
+                           Local.Homes (I).Berries := Ber_N;
+                           Local.Homes (I).Fish := Fish_H;
+                           Local.Homes (I).Sticks := Stk_H;
+                           Local.Homes (I).Stones := Sto_H;
+                        end if;
+                     end;
                      if Good and then Pos = Lb + 1 and then Group_N in Group_Id then
                         Local.Homes (I).Used := Used_N = 1;
                         if Kind_N = 1 then
@@ -1112,14 +1252,78 @@ package body Island.World is
                      Take_Nat (Buf, Pos, Lb, Et, 1_000_000, Good);
                      Expect (Buf, Pos, Lb, ' ', Good);
                      Take_Nat (Buf, Pos, Lb, Ec, 3, Good);
+                     Expect (Buf, Pos, Lb, ' ', Good);
+                     declare
+                        Tr, Inn, Out_N, From_N : Natural;
+                     begin
+                        Take_Nat (Buf, Pos, Lb, Tr, 1_000_000, Good);
+                        Expect (Buf, Pos, Lb, ' ', Good);
+                        Take_Nat (Buf, Pos, Lb, Inn, 1_000_000, Good);
+                        Expect (Buf, Pos, Lb, ' ', Good);
+                        Take_Nat (Buf, Pos, Lb, Out_N, 1_000_000, Good);
+                        if Good then
+                           Local.Groups (G).Trades := Tr;
+                           Local.Groups (G).Migrants_In := Inn;
+                           Local.Groups (G).Migrants_Out := Out_N;
+                        end if;
+                        for From in Group_Id loop
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, From_N, 1_000_000, Good);
+                           if Good then
+                              Local.Groups (G).Came_From (From) := From_N;
+                           end if;
+                        end loop;
+                     end;
                      if Good and then Pos = Lb + 1 then
                         Local.Groups (G) :=
                           (Births => Gb, Deaths => Db,
-                           Extinct_Turn => Et, Extinct_Cause => Ec);
+                           Extinct_Turn => Et, Extinct_Cause => Ec,
+                           Trades => Local.Groups (G).Trades,
+                           Migrants_In => Local.Groups (G).Migrants_In,
+                           Migrants_Out => Local.Groups (G).Migrants_Out,
+                           Came_From => Local.Groups (G).Came_From);
                      else
                         Good := False;
                      end if;
                   end loop;
+                  declare
+                     Tv, Known_N, Kind_N, Nx, Ny : Natural;
+                  begin
+                     for A in Group_Id loop
+                        Next_Line (Buf, From, Hb, Lb, Good);
+                        Pos := Hb;
+                        for B in Group_Id loop
+                           if B > Group_Id'First then
+                              Expect (Buf, Pos, Lb, ' ', Good);
+                           end if;
+                           Take_Nat (Buf, Pos, Lb, Tv, Trust_Max, Good);
+                           if Good then
+                              Local.Trust (A) (B) := Tv;
+                           end if;
+                        end loop;
+                     end loop;
+                     for G in Group_Id loop
+                        for I in Note_Id loop
+                           Next_Line (Buf, From, Hb, Lb, Good);
+                           Pos := Hb;
+                           Take_Nat (Buf, Pos, Lb, Known_N, 1, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Kind_N, 3, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Nx, Coord'Last, Good);
+                           Expect (Buf, Pos, Lb, ' ', Good);
+                           Take_Nat (Buf, Pos, Lb, Ny, Coord'Last, Good);
+                           if Good and then Pos = Lb + 1 then
+                              Local.Notes (G) (I).Known := Known_N = 1;
+                              Local.Notes (G) (I).Kind := Note_Kind'Val (Kind_N);
+                              Local.Notes (G) (I).X := Coord (Nx);
+                              Local.Notes (G) (I).Y := Coord (Ny);
+                           else
+                              Good := False;
+                           end if;
+                        end loop;
+                     end loop;
+                  end;
                end;
             end if;
          end;

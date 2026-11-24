@@ -58,6 +58,7 @@ make ADA_DRIVER=gcc-12
 | `gather` | Pick up one stick, one stone, or a portion of berries to carry. |
 | `build` | Spend 5 sticks and 3 stones to build a hut where you stand. |
 | `feed` | Give carried berries to a child in the home where you stand. |
+| `trade` | Swap surplus goods with a creature from another group beside you. |
 | `world` | The two seeds, population, groups, and homes. This does not spend a turn. |
 
 Failure reasons include `blocked`, `nothing here`, `hand full`, `hand empty`, `occupied`, `unknown command`, `bad command`, `no world`, `bad save`, `text too long`, and `text not plain`.
@@ -70,7 +71,7 @@ Water, rock, and trees block movement. Sand and grass do not. A step off the bea
 
 The stone starts at 47,48. A stick is at 49,48. A shell is at 48,50. Nothing is random.
 
-Twelve other creatures start with you, three in each corner, in four groups. You are in group 1. Each creature has speed, sight, metabolism, and fertility, and a child inherits the parents' group. A child is born in a home and stays there until age 150, eating only food a parent carries in. Each group starts with a cave that holds 4 young. A full home blocks births until the group builds another hut from 5 sticks and 3 stones. `gather`, `build`, and `feed` are how you do that yourself. `look` lists the creatures you can see. `world` lists the groups and the homes.
+Twelve other creatures start with you, three in each corner, in four groups. You are in group 1. Speed, sight, metabolism, and fertility each come from two alleles. A child inherits one allele from each parent, and the visible trait is their average. A colour allele is dominant, so a marked creature has at least one dominant copy. Creatures with the widest sight sometimes scout and bring back a shared map of food, homes, and piles. Groups keep a trust score. A trusted neighbour can trade, and two adults who trust each other can have a child in the mother's group. A creature in a small group, or a full home, may join a trusted group that has room and keeps its genes. Berries are richer in the north and stones in the south, which gives the groups a reason to trade. `gather`, `build`, `feed`, and `trade` are the player's extra commands. `world` lists the groups and the homes.
 
 ## Plug in your AI
 
@@ -128,7 +129,7 @@ From a fresh clone, with GNAT and gprbuild on `PATH` (`gcc` must be the Ada comp
 make test
 ```
 
-That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth inside a home, feeds that child, checks that a full home blocks the next birth, starves one creature, and runs 2000 turns. The long run passes when the population is still alive and an average trait has changed. The same seeds produce the same world after 2000 turns, and a different island seed produces a different island. `ldd bin/island` must not mention `libgnat`.
+That builds with `-gnat2022 -gnata -gnatwa -gnatwe`, links the runtime statically, and runs a smoke that eats berries, fails to fish without the stick, then fishes with it, checks the hunger countdown, forces one birth inside a home, feeds that child, checks that a full home blocks the next birth, makes one trade, one migration, and one cross-group birth, checks a 1:2:1 colour cross, starves one creature, and runs 2000 turns twice to show the same seeds match. It also runs 20000 turns and checks that all four groups are still alive. On v0.4 the south-east group had died by then. `ldd bin/island` must not mention `libgnat`.
 
 In 0.3.1 the population sat at 35 because the world had 36 creature slots and the player's slot was never given to anyone else. Births now wait for room in a home.
 

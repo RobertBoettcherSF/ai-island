@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Island</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0;
+    background: #f6f1e7;
+    color: #1b1916;
+    font: 18px/1.45 Georgia, "Iowan Old Style", serif;
+  }
+  main { max-width: 40rem; margin: 0 auto; padding: 12px 12px 32px; }
+  h1 { font-size: 1.6rem; margin: 0.2rem 0; }
+  p, label { margin: 0.4rem 0; }
+  a { color: #143a5a; }
+  button, input {
+    font: 18px/1.2 Georgia, "Iowan Old Style", serif;
+    color: #1b1916;
+    background: #fffdf8;
+    border: 2px solid #1b1916;
+    border-radius: 6px;
+    min-height: 44px;
+  }
+  button { padding: 8px 14px; }
+  button[aria-pressed="true"] { background: #1b1916; color: #f6f1e7; }
+  input { padding: 8px 10px; width: 100%; box-sizing: border-box; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; }
+  form input { flex: 1 1 12rem; }
+  :focus-visible { outline: 3px solid #143a5a; outline-offset: 2px; }
+  canvas {
+    width: 100%;
+    height: auto;
+    max-width: 512px;
+    background: #fff;
+    border: 2px solid #1b1916;
+    image-rendering: pixelated;
+    display: block;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #fffdf8;
+    border: 2px solid #1b1916;
+    padding: 8px;
+    min-height: 3rem;
+    font: 15px/1.35 ui-monospace, monospace;
+  }
+  #stamp { font-size: 0.85rem; }
+  #banner, #crash {
+    background: #fff3cd;
+    border: 2px solid #1b1916;
+    padding: 8px;
+  }
+  #autoResult.pass { background: #e5f6ea; }
+  #autoResult.fail { background: #fde8ea; }
+  .swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border: 1px solid #1b1916; vertical-align: -2px; margin-right: 0.15rem; }
+  ul.legend { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; font-size: 0.95rem; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Island</h1>
+  <p>A small island you can walk by typing commands. The same words work in the terminal program <code>island</code>.</p>
+  <p id="banner" hidden>This page is not the latest build. Reload it.</p>
+  <p id="crash" hidden>The last visit did not close cleanly. Debug can save a report of it.</p>
+  <p id="where" aria-live="polite"></p>
+  <canvas id="map" width="512" height="512" role="img" aria-label="A drawn island, 32 by 32 squares."></canvas>
+  <ul class="legend">
+    <li><span class="swatch" style="background:#3a7ca5"></span>water</li>
+    <li><span class="swatch" style="background:#e4cb8c"></span>sand</li>
+    <li><span class="swatch" style="background:#6f8f4e"></span>grass</li>
+    <li><span class="swatch" style="background:#7e7a74"></span>rock</li>
+    <li><span class="swatch" style="background:#2d6a3a"></span>tree</li>
+    <li>stone is a circle, stick is a line, shell is an arc, you are the triangle</li>
+  </ul>
+  <div class="row">
+    <button type="button" id="auto">Auto</button>
+    <button type="button" id="sound" aria-pressed="true">Sound on</button>
+    <button type="button" id="debug">Debug</button>
+  </div>
+  <p id="autoResult" role="status"></p>
+  <form id="play">
+    <label for="cmd">Command</label>
+    <input id="cmd" name="cmd" maxlength="240" autocomplete="off" spellcheck="false" aria-describedby="hint">
+    <button type="submit">Run</button>
+  </form>
+  <p id="hint">Try <code>look</code>, <code>move N</code>, <code>pick</code>, <code>place</code>, or Auto. Auto walks to the stone, carries it to the beach, and reports pass or fail.</p>
+  <pre id="reply" aria-live="polite"></pre>
+  <p id="stamp"></p>
+  <p><a href="https://github.com/RobertBoettcherSF/ai-island#plug-in-your-ai">Plug in your AI</a> · <a href="https://github.com/RobertBoettcherSF/ai-island">source</a></p>
+</main>
+<script>
+"use strict";
+const STAMP = "__STAMP__";
+const COMMIT = "__COMMIT__";
+const WASM = "__WASM_BASE64__";
+const CELL = 16;
+const COLORS = {0: "#3a7ca5", 1: "#e4cb8c", 2: "#6f8f4e", 3: "#7e7a74", 4: "#2d6a3a"};
+const store = localStorage;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let soundOn = store.getItem("ai-island.sound") !== "off";
+let actx = null;
+let ada = null;
+let autoState = "not-run";
+let autoDetail = "";
+let runningAuto = false;
+const errors = [];
+const log = [];
+const crashedBefore = store.getItem("ai-island.clean") === "0";
+store.setItem("ai-island.clean", "0");
+addEventListener("pagehide", () => { if (!errors.length) store.setItem("ai-island.clean", "1"); });
+addEventListener("error", (ev) => { errors.push(String(ev.message || ev.error || "error")); });
+addEventListener("unhandledrejection", (ev) => { errors.push(String(ev.reason)); });
+
+stamp.textContent = STAMP;
+sound.setAttribute("aria-pressed", soundOn ? "true" : "false");
+sound.textContent = soundOn ? "Sound on" : "Sound off";
+if (crashedBefore) crash.hidden = false;
+
+fetch("version.txt", {cache: "no-store"})
+  .then((r) => r.ok ? r.text() : "")
+  .then((t) => { if (t.trim() && t.trim() !== STAMP) banner.hidden = false; })
+  .catch(() => {});
+
+function memory() { return new Uint8Array(ada.memory.buffer); }
+function cstr(ptr) {
+  if (!ptr) return "";
+  const mem = memory();
+  let s = "";
+  for (let i = ptr; i < mem.length && mem[i]; i++) s += String.fromCharCode(mem[i]);
+  return s;
+}
+function blip() {
+  if (!soundOn || !actx) return;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = "square";
+  o.frequency.value = 740;
+  g.gain.setValueAtTime(0.04, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.03);
+  o.connect(g); g.connect(actx.destination);
+  o.start();
+  o.stop(actx.currentTime + 0.04);
+}
+function unlock() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) actx = new AC();
+  }
+  if (actx && actx.state === "suspended") actx.resume();
+}
+addEventListener("pointerdown", unlock, {once: false});
+
+function drawObject(ctx, code, x, y) {
+  const cx = x * CELL + CELL / 2;
+  const cy = y * CELL + CELL / 2;
+  ctx.save();
+  if (code === 1) {
+    ctx.fillStyle = "#2b2b2b";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (code === 2) {
+    ctx.strokeStyle = "#6b3f1d";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy + 4);
+    ctx.lineTo(cx + 5, cy - 4);
+    ctx.stroke();
+  } else if (code === 3) {
+    ctx.strokeStyle = "#f4f7f2";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 2, 5, Math.PI, 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function draw() {
+  if (!ada) return;
+  const ctx = map.getContext("2d");
+  const n = ada.island_width();
+  map.width = n * CELL;
+  map.height = ada.island_height() * CELL;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      ctx.fillStyle = COLORS[ada.island_cell(x, y)] || "#c0392b";
+      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      const obj = ada.island_object(x, y);
+      if (obj > 0) drawObject(ctx, obj, x, y);
+    }
+  }
+  const x = ada.island_agent_x();
+  const y = ada.island_agent_y();
+  const f = ada.island_facing();
+  const cx = x * CELL + CELL / 2;
+  const cy = y * CELL + CELL / 2;
+  const d = 6;
+  const pts = [
+    [[0, -d], [d, d], [-d, d]],
+    [[d, 0], [-d, d], [-d, -d]],
+    [[0, d], [-d, -d], [d, -d]],
+    [[-d, 0], [d, -d], [d, d]]
+  ][f] || [[0, -d], [d, d], [-d, d]];
+  ctx.fillStyle = "#1b1916";
+  ctx.beginPath();
+  ctx.moveTo(cx + pts[0][0], cy + pts[0][1]);
+  ctx.lineTo(cx + pts[1][0], cy + pts[1][1]);
+  ctx.lineTo(cx + pts[2][0], cy + pts[2][1]);
+  ctx.closePath();
+  ctx.fill();
+  const faces = ["north", "east", "south", "west"];
+  const hands = ["empty", "a stone", "a stick", "a shell"];
+  map.setAttribute("aria-label",
+    "Island. You are at " + x + "," + y + " facing " + (faces[f] || "?") +
+    ", hand " + (hands[ada.island_hand()] || "?") + ".");
+}
+function showReply(command, reply) {
+  log.push({command, reply});
+  if (log.length > 40) log.shift();
+  replyEl().textContent = reply;
+  let obj = null;
+  try { obj = JSON.parse(reply); } catch (e) { obj = null; }
+  if (obj && typeof obj.x === "number") {
+    const hand = obj.hand == null ? "empty" : obj.hand;
+    where.textContent = "At " + obj.x + "," + obj.y + " facing " + obj.facing + ", hand " + hand + ".";
+  }
+  return obj;
+}
+function replyEl() { return document.getElementById("reply"); }
+function runCommand(line) {
+  const bytes = new TextEncoder().encode(line);
+  if (bytes.length > 240) {
+    ada.island_exec(bytes.length);
+  } else {
+    memory().set(bytes, ada.island_command_ptr());
+    ada.island_exec(bytes.length);
+  }
+  const ptr = ada.island_reply_ptr();
+  const len = ada.island_reply_len();
+  const reply = new TextDecoder().decode(memory().slice(ptr, ptr + len));
+  draw();
+  return {reply, obj: showReply(line, reply)};
+}
+function setAuto(text, ok) {
+  autoResult.textContent = text;
+  autoResult.className = ok === true ? "pass" : ok === false ? "fail" : "";
+  if (ok === true) { autoState = "pass"; autoDetail = ""; }
+  else if (ok === false) { autoState = "fail"; autoDetail = text; }
+}
+function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function demoCommands() {
+  const steps = ["new", "look", "move N", "pick"];
+  for (let i = 0; i < 11; i++) steps.push("move N");
+  steps.push("place", "look");
+  return steps;
+}
+function autoFailed(reason) {
+  setAuto("Auto: fail — " + reason, false);
+}
+async function runAuto() {
+  if (!ada || runningAuto) return;
+  runningAuto = true;
+  auto.disabled = true;
+  setAuto("Auto: running", null);
+  const steps = demoCommands();
+  let last = null;
+  let pick = null;
+  try {
+    for (const step of steps) {
+      blip();
+      const got = runCommand(step);
+      last = got.obj;
+      if (step === "pick") pick = got.obj;
+      if (!got.obj || got.obj.ok !== true) {
+        autoFailed((got.obj && got.obj.reason) || step + " was not ok");
+        return;
+      }
+      if (!reduced) await wait(50);
+    }
+    const stone = last && last.seen && last.seen.find((c) => c.x === 16 && c.y === 4 && c.object === "stone");
+    if (!pick || pick.hand !== "stone") autoFailed("did not pick the stone");
+    else if (!last || last.x !== 16 || last.y !== 4) autoFailed("not on the beach");
+    else if (last.ground !== "sand") autoFailed("beach is not sand");
+    else if (last.hand !== null) autoFailed("hand is not empty");
+    else if (!stone) autoFailed("stone is not on the beach");
+    else if (ada.island_agent_x() !== 16 || ada.island_agent_y() !== 4) autoFailed("picture disagrees");
+    else if (ada.island_hand() !== 0) autoFailed("picture hand disagrees");
+    else if (ada.island_object(16, 4) !== 1) autoFailed("picture stone disagrees");
+    else if (ada.island_cell(16, 4) !== 1) autoFailed("picture ground disagrees");
+    else setAuto("Auto: pass", true);
+  } catch (e) {
+    errors.push(String(e));
+    autoFailed(String(e));
+  } finally {
+    runningAuto = false;
+    auto.disabled = false;
+  }
+}
+function report() {
+  return {
+    schema: "ai-island-f9",
+    version: STAMP,
+    commit: COMMIT,
+    browser: navigator.userAgent,
+    settings: {sound: soundOn, reducedMotion: reduced, language: "en-GB"},
+    fps: null,
+    errors: errors.slice(),
+    commands: log.slice(),
+    auto: autoState,
+    autoDetail: autoDetail,
+    crash: crashedBefore ? {previous: true} : null
+  };
+}
+function downloadReport() {
+  const blob = new Blob([JSON.stringify(report(), null, 1)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ai-island-f9.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+window.aiIslandReport = report;
+
+sound.onclick = () => {
+  unlock();
+  soundOn = !soundOn;
+  store.setItem("ai-island.sound", soundOn ? "on" : "off");
+  sound.setAttribute("aria-pressed", soundOn ? "true" : "false");
+  sound.textContent = soundOn ? "Sound on" : "Sound off";
+  blip();
+};
+auto.onclick = () => { unlock(); runAuto(); };
+debug.onclick = () => downloadReport();
+play.onsubmit = (ev) => {
+  ev.preventDefault();
+  unlock();
+  const line = cmd.value.trim();
+  if (!line || !ada) return;
+  blip();
+  runCommand(line);
+  cmd.value = "";
+};
+addEventListener("keydown", (ev) => {
+  if (ev.key === "F9") {
+    ev.preventDefault();
+    downloadReport();
+  }
+});
+
+const seenImport = new Set();
+function missing(name) {
+  return () => {
+    if (!seenImport.has(name)) {
+      seenImport.add(name);
+      const msg = "unknown wasm import " + name;
+      console.warn(msg);
+      errors.push(msg);
+    }
+    return 0;
+  };
+}
+const env = new Proxy({
+  island_panic(ptr, line) {
+    const msg = "Ada check failed " + cstr(ptr) + ":" + line;
+    errors.push(msg);
+    throw new Error(msg);
+  },
+  island_halt() { throw new Error("Ada halt"); }
+}, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    return missing(String(prop));
+  }
+});
+
+const bytes = Uint8Array.from(atob(WASM), (c) => c.charCodeAt(0));
+WebAssembly.instantiate(bytes, {env: env, wasi_snapshot_preview1: env}).then((result) => {
+  ada = result.instance.exports;
+  ada.island_reset();
+  draw();
+  runCommand("look");
+}).catch((e) => {
+  errors.push(String(e));
+  replyEl().textContent = "The island did not start: " + e;
+});
+</script>
+</body>
+</html>

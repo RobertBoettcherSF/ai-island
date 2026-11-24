@@ -1,0 +1,35 @@
+project Island is
+
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj/native";
+   for Exec_Dir use "bin";
+   for Main use ("island_cli.adb");
+
+   type Mode_Kind is ("dev", "test");
+   Mode : Mode_Kind := External ("MODE", "dev");
+
+   package Compiler is
+      for Driver ("Ada") use External ("ADA_DRIVER", "gcc");
+      case Mode is
+         when "dev" =>
+            for Default_Switches ("Ada") use
+              ("-gnat2022", "-gnata", "-gnatwa", "-O1");
+         when "test" =>
+            for Default_Switches ("Ada") use
+              ("-gnat2022", "-gnata", "-gnatwa", "-gnatwe", "-O1");
+      end case;
+   end Compiler;
+
+   package Builder is
+      for Executable ("island_cli.adb") use "island";
+   end Builder;
+
+   package Binder is
+      for Default_Switches ("Ada") use ("-static");
+   end Binder;
+
+   package Linker is
+      for Default_Switches ("Ada") use ("-static");
+   end Linker;
+
+end Island;

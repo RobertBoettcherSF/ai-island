@@ -1,0 +1,55 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gnat-12:
+    name: GNAT 12.3
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GNAT 12.3 and gprbuild
+        run: |
+          sudo apt-get update
+          # The runner image already has GCC 12.4. Pinning 12.3 is a downgrade.
+          sudo apt-get install -y --allow-downgrades \
+            gcc-12-base=12.3.0-17ubuntu1 \
+            cpp-12=12.3.0-17ubuntu1 \
+            gcc-12=12.3.0-17ubuntu1 \
+            libgcc-12-dev=12.3.0-17ubuntu1 \
+            libgnat-12=12.3.0-17ubuntu1 \
+            gnat-12=12.3.0-17ubuntu1 \
+            gprbuild
+          gcc-12 --version
+          # gprbuild asks for the target-prefixed binder next to gcc-12.
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatbind-12 /usr/local/bin/x86_64-linux-gnu-gnatbind
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatlink-12 /usr/local/bin/x86_64-linux-gnu-gnatlink
+          sudo ln -sfn /usr/bin/gnatbind-12 /usr/local/bin/gnatbind
+          sudo ln -sfn /usr/bin/gnatlink-12 /usr/local/bin/gnatlink
+          command -v x86_64-linux-gnu-gnatbind
+          x86_64-linux-gnu-gnatbind --version | head -1
+      - name: Test
+        run: make test ADA_DRIVER=gcc-12
+
+  gnat-14:
+    name: GNAT 14
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GNAT 14 and gprbuild
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnat-14 gprbuild
+          gcc-14 --version
+          # gprbuild asks for x86_64-linux-gnu-gnatbind, which the 14 package
+          # does not install under that unversioned name.
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatbind-14 /usr/local/bin/x86_64-linux-gnu-gnatbind
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatlink-14 /usr/local/bin/x86_64-linux-gnu-gnatlink
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatbind-14 /usr/local/bin/gnatbind
+          sudo ln -sfn /usr/bin/x86_64-linux-gnu-gnatlink-14 /usr/local/bin/gnatlink
+          command -v x86_64-linux-gnu-gnatbind
+          x86_64-linux-gnu-gnatbind --version | head -1
+      - name: Test
+        run: make test ADA_DRIVER=gcc-14

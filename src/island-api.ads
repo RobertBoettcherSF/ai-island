@@ -255,4 +255,44 @@ package Island.API is
    function Rejections return Integer
      with Export, Convention => C, External_Name => "island_rejections";
 
+   function Reason_Count return Integer
+     with Export, Convention => C, External_Name => "island_reason_count";
+
+   function Reason_Code (Index : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_reason_code";
+
+   function Region_Count return Integer
+     with Export, Convention => C, External_Name => "island_region_count";
+
+   function Region_Kind (Index : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_region_kind";
+
+   function Region_A (Index : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_region_a";
+
+   function Region_B (Index : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_region_b";
+
+   function Biome_At (X, Y : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_biome";
+
+   function Group_Title (G : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_title";
+
+   function Group_Diplomacy (A, B : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_diplomacy";
+
+   function Group_Syl (G, Which : Integer) return Integer
+     with Export, Convention => C, External_Name => "island_group_syl";
+
+   function Trail_Span return Integer
+     with Export, Convention => C, External_Name => "island_trail_span";
+
+   function Trail_Peak return Integer
+     with Export, Convention => C, External_Name => "island_trail_peak";
+
+   procedure Reset_Settings
+     (Island_Seed, Pop_Seed, Size_Code, Pole_Code, Preset_Code : Integer)
+     with Export, Convention => C, External_Name => "island_reset_settings";
+
 end Island.API;

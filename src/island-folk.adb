@@ -115,10 +115,10 @@ package body Island.Folk is
    end record;
 
    Corners : constant array (World.Group_Id) of Corner :=
-     [1 => (X => 18, Y => 18),
-      2 => (X => 78, Y => 18),
-      3 => (X => 18, Y => 78),
-      4 => (X => 78, Y => 78)];
+     [1 => (X => 16, Y => 16),
+      2 => (X => 112, Y => 16),
+      3 => (X => 16, Y => 112),
+      4 => (X => 112, Y => 112)];
 
    procedure Place_Adult
      (S : in out World.State; Who : World.Folk_Id; G : World.Group_Id; X, Y : Coord)
@@ -159,40 +159,40 @@ package body Island.Folk is
       Base : constant Corner := Corners (G);
       P    : Map.Spot;
       NX, NY : Integer;
-      Flat : Boolean;
+      Best : Corner := Base;
+      Best_D : Natural := Natural'Last;
+      D : Natural;
+      Found : Boolean := False;
    begin
-      for Pass in 1 .. 2 loop
-         Flat := Pass = 1;
-         for Step in 1 .. Map.River_Length (S.Island_Seed, G) loop
-            P := Map.River_Step (S.Island_Seed, G, Step);
-            if abs (Integer (P.X) - Integer (Base.X))
-                 + abs (Integer (P.Y) - Integer (Base.Y)) <= 28
+      for Step in 1 .. Map.River_Length (S.Island_Seed, G) loop
+         P := Map.River_Step (S.Island_Seed, G, Step);
+         for Dir in 1 .. 4 loop
+            NX := Integer (P.X);
+            NY := Integer (P.Y);
+            case Dir is
+               when 1 =>
+                  NY := NY - 1;
+               when 2 =>
+                  NX := NX + 1;
+               when 3 =>
+                  NY := NY + 1;
+               when others =>
+                  NX := NX - 1;
+            end case;
+            if Dry (S, NX, NY)
+              and then Map.Height (S.Island_Seed, Coord (NX), Coord (NY)) <= 24
             then
-               for Dir in 1 .. 4 loop
-                  NX := Integer (P.X);
-                  NY := Integer (P.Y);
-                  case Dir is
-                     when 1 =>
-                        NY := NY - 1;
-                     when 2 =>
-                        NX := NX + 1;
-                     when 3 =>
-                        NY := NY + 1;
-                     when others =>
-                        NX := NX - 1;
-                  end case;
-                  if Dry (S, NX, NY)
-                    and then
-                      (not Flat
-                       or else Map.Height (S.Island_Seed, Coord (NX), Coord (NY)) <= 8)
-                  then
-                     return (X => Coord (NX), Y => Coord (NY));
-                  end if;
-               end loop;
+               D := Natural (abs (NX - Integer (Base.X)) + abs (NY - Integer (Base.Y)));
+               if not Found or else D < Best_D then
+                  Found := True;
+                  Best_D := D;
+                  Best := (X => Coord (NX), Y => Coord (NY));
+               end if;
             end if;
          end loop;
+         exit when Found and then Step > 12;
       end loop;
-      return Base;
+      return Best;
    end Camp_By_Water;
 
    function Hill_At (S : World.State; G : World.Group_Id) return Corner is
@@ -455,17 +455,8 @@ package body Island.Folk is
               or else Roll (S, 2) = 0)
          then
             declare
-               Home : constant Corner := Corners (S.Folk (Who).Group);
-               Old_D : constant Natural :=
-                 Dist (S.Folk (Who).X, S.Folk (Who).Y, Home.X, Home.Y);
-               New_D : constant Natural :=
-                 Dist (Coord (NX), Coord (NY), Home.X, Home.Y);
-               OX : constant Coord := S.Folk (Who).X;
-               OY : constant Coord := S.Folk (Who).Y;
             begin
-               if New_D < Old_D then
-                  Stamp (S, OX, OY, S.Folk (Who).Group);
-               end if;
+               Stamp (S, Coord (NX), Coord (NY), S.Folk (Who).Group);
                if Road_Here (S, Coord (NX), Coord (NY)) then
                   for R in World.Road_Id loop
                      if S.Roads (R).Used
@@ -791,11 +782,77 @@ package body Island.Folk is
             if S.Folk (Who).Age < World.Adult_Age then
                goto Next_Folk;
             end if;
+            if not S.Folk (Who).Scout and then S.Folk (Who).Thirst > 70
+              and then not Map.Drinkable
+                (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y)
+            then
+               Try_Berry (S, Who);
+               declare
+                  Which : constant Map.River_Index := S.Folk (Who).Group;
+                  Len   : constant Natural :=
+                    Map.River_Length (S.Island_Seed, Which);
+                  Near  : Natural := Natural'Last;
+                  Spot  : Map.Spot;
+                  Ds    : Natural;
+               begin
+                  for Step in 1 .. Len loop
+                     Spot := Map.River_Step (S.Island_Seed, Which, Step);
+                     Ds := abs (Integer (S.Folk (Who).X) - Integer (Spot.X))
+                       + abs (Integer (S.Folk (Who).Y) - Integer (Spot.Y));
+                     if Ds < Near then
+                        Near := Ds;
+                        Best_X := Spot.X;
+                        Best_Y := Spot.Y;
+                     end if;
+                  end loop;
+                  if Near < Natural'Last then
+                     Seek (S, Who, Best_X, Best_Y);
+                     goto Next_Folk;
+                  end if;
+               end;
+            end if;
+            if not S.Folk (Who).Scout and then S.Folk (Who).Belly.Full < 30 then
+               declare
+                  Here_S : constant Natural :=
+                    Food_Score (S, S.Folk (Who).X, S.Folk (Who).Y);
+                  Best_S : Natural := Here_S;
+                  NX, NY : Integer;
+                  Better : Boolean := False;
+               begin
+                  for Dir in 1 .. 4 loop
+                     NX := Integer (S.Folk (Who).X);
+                     NY := Integer (S.Folk (Who).Y);
+                     case Dir is
+                        when 1 =>
+                           NY := NY - 1;
+                        when 2 =>
+                           NX := NX + 1;
+                        when 3 =>
+                           NY := NY + 1;
+                        when others =>
+                           NX := NX - 1;
+                     end case;
+                     if NX in Coord and then NY in Coord
+                       and then Dry (S, NX, NY)
+                       and then Food_Score (S, Coord (NX), Coord (NY)) > Best_S
+                     then
+                        Best_S := Food_Score (S, Coord (NX), Coord (NY));
+                        Best_X := Coord (NX);
+                        Best_Y := Coord (NY);
+                        Better := True;
+                     end if;
+                  end loop;
+                  if Better then
+                     Seek (S, Who, Best_X, Best_Y);
+                     goto Next_Folk;
+                  end if;
+               end;
+            end if;
             Found := False;
             if not S.Folk (Who).Scout
-              and then S.Folk (Who).Belly.Full > 45
+              and then S.Folk (Who).Belly.Full > 35
               and then S.Turn > 15
-              and then Roll (S, 30) = 0
+              and then Roll (S, 12) = 0
             then
                declare
                   Already : Boolean := False;
@@ -1272,7 +1329,7 @@ package body Island.Folk is
    procedure Pave (S : in out World.State) is
    begin
       for T in World.Trail_Id loop
-         if S.Trails (T).Used and then S.Trails (T).Strength >= 8 then
+         if S.Trails (T).Used and then S.Trails (T).Strength >= 12 then
             for R in World.Road_Id loop
                if not S.Roads (R).Used then
                   S.Roads (R) :=
@@ -1430,6 +1487,27 @@ package body Island.Folk is
       return Trail_Of (S, X, Y);
    end Scent;
 
+   function Food_Score (S : World.State; X, Y : Coord) return Natural is
+      Score : Natural := Map.Food_Yield (S.Island_Seed, X, Y) * 4;
+      Spot  : Map.Spot;
+   begin
+      if Map.Biome (S.Island_Seed, X, Y) = 1 then
+         Score := Score + 2;
+      end if;
+      if Map.Drinkable (S.Island_Seed, X, Y) then
+         Score := Score + 2;
+      end if;
+      for I in Map.Bush_Index loop
+         Spot := Map.Bush (S.Island_Seed, I);
+         if abs (Integer (Spot.X) - Integer (X)) <= 1
+           and then abs (Integer (Spot.Y) - Integer (Y)) <= 1
+         then
+            Score := Score + 15;
+         end if;
+      end loop;
+      return Score;
+   end Food_Score;
+
    procedure After_Actions (S : in out World.State; Turns : Positive) is
       Slot : Integer;
       Bred : array (World.Folk_Id) of Boolean := [others => False];
@@ -1449,9 +1527,22 @@ package body Island.Folk is
             if S.Folk (Who).Age >= World.Adult_Age then
                S.Folk (Who).Home := 0;
             end if;
-            if S.Folk (Who).Thirst < 100 then
-               S.Folk (Who).Thirst := S.Folk (Who).Thirst + 1;
-            end if;
+            declare
+               Cost : constant Natural :=
+                 Map.Thirst_Cost (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y);
+            begin
+               if S.Folk (Who).Thirst + Cost < 100 then
+                  S.Folk (Who).Thirst := S.Folk (Who).Thirst + Cost;
+               else
+                  S.Folk (Who).Thirst := 100;
+               end if;
+               if Map.Biome (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y) = 3
+                 and then S.Turn mod 2 = 0
+                 and then S.Folk (Who).Belly.Full > 0
+               then
+                  S.Folk (Who).Belly.Full := S.Folk (Who).Belly.Full - 1;
+               end if;
+            end;
             if Map.Drinkable (S.Island_Seed, S.Folk (Who).X, S.Folk (Who).Y) then
                S.Folk (Who).Thirst := 0;
             elsif S.Folk (Who).Thirst >= 100
@@ -1468,7 +1559,9 @@ package body Island.Folk is
             end if;
          end if;
       end loop;
-      Decay_Paths (S);
+      if S.Turn mod 8 = 0 then
+         Decay_Paths (S);
+      end if;
       Pave (S);
       Open_Markets (S);
       declare

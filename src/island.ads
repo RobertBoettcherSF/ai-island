@@ -2,8 +2,11 @@
 -- the child packages, and they do not touch files or the browser.
 package Island is
 
-   Grid_Size : constant := 96;
-   subtype Coord is Integer range 0 .. Grid_Size - 1;
+   --  Largest Dwarf Fortress size (2^8+1). The live map is smaller unless
+   --  the player picks Large. Medium (129) is the default.
+   Max_Size : constant := 257;
+   subtype Coord is Integer range 0 .. Max_Size - 1;
+   Default_Size : constant := 129;
 
    Max_Objects : constant := 3;
    subtype Object_Index is Integer range 1 .. Max_Objects;

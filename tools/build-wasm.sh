@@ -115,6 +115,19 @@ mkdir -p obj/wasm docs
     --export=island_thirst \
     --export=island_tile_height \
     --export=island_rejections \
+    --export=island_reason_count \
+    --export=island_reason_code \
+    --export=island_region_count \
+    --export=island_region_kind \
+    --export=island_region_a \
+    --export=island_region_b \
+    --export=island_biome \
+    --export=island_group_title \
+    --export=island_diplomacy \
+    --export=island_group_syl \
+    --export=island_trail_span \
+    --export=island_trail_peak \
+    --export=island_reset_settings \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \

@@ -57,6 +57,8 @@ package Island.Folk is
 
    function Scent (S : World.State; X, Y : Coord) return Natural;
 
+   function Food_Score (S : World.State; X, Y : Coord) return Natural;
+
    procedure Market_Deal (S : in out World.State; Who : World.Folk_Id; Did : out Boolean)
      with Pre => World.Valid (S),
           Post => World.Valid (S);

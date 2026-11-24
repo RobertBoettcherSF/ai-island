@@ -90,7 +90,7 @@
     <div id="meterFill"></div>
   </div>
   <p id="popLine" hidden>Population 13.</p>
-  <canvas id="map" width="640" height="640" role="img" aria-label="The whole island, 96 by 96 squares. Drag to pan and scroll to zoom."></canvas>
+  <canvas id="map" width="640" height="640" role="img" aria-label="The whole island. Drag to pan and scroll to zoom."></canvas>
   <ul class="legend">
     <li><span class="swatch" style="background:#3a7ca5"></span>water</li>
     <li><span class="swatch" style="background:#e4cb8c"></span>sand</li>
@@ -117,6 +117,30 @@
   <div class="row">
     <label for="islandSeed">Island <input id="islandSeed" type="number" min="0" max="2147483647" value="539365668"></label>
     <label for="popSeed">Population <input id="popSeed" type="number" min="0" max="2147483647" value="539365668"></label>
+    <label for="sizeCode">Size
+      <select id="sizeCode">
+        <option value="0">Pocket</option>
+        <option value="1">Smaller</option>
+        <option value="2">Small</option>
+        <option value="3" selected>Medium</option>
+        <option value="4">Large</option>
+      </select>
+    </label>
+    <label for="poleCode">Pole
+      <select id="poleCode">
+        <option value="0" selected>North</option>
+        <option value="1">South</option>
+        <option value="2">East</option>
+        <option value="3">West</option>
+      </select>
+    </label>
+    <label for="presetCode">Preset
+      <select id="presetCode">
+        <option value="0" selected>Balanced</option>
+        <option value="1">Lush</option>
+        <option value="2">Arid</option>
+      </select>
+    </label>
     <button type="button" id="randomSeeds">Random</button>
   </div>
   <div class="row">
@@ -297,7 +321,16 @@ function pathReport() {
     roadLength: ada.island_road_count(),
     markets: markets,
     thirst: ada.island_thirst(),
-    rejections: ada.island_rejections()
+    rejections: ada.island_rejections(),
+    reasons: Array.from({length: ada.island_reason_count()}, (_, i) => ada.island_reason_code(i + 1)),
+    regions: Array.from({length: ada.island_region_count()}, (_, i) => ({
+      kind: ada.island_region_kind(i + 1),
+      a: ada.island_region_a(i + 1),
+      b: ada.island_region_b(i + 1)
+    })),
+    titles: [1, 2, 3, 4].map((g) => ada.island_group_title(g)),
+    trailSpan: ada.island_trail_span(),
+    trailWear: ada.island_trail_peak()
   };
 }
 function rememberChart() {
@@ -623,12 +656,18 @@ function yieldTurn() {
 function applySeeds(island, pop) {
   islandSeed.value = String(island);
   popSeed.value = String(pop);
+  const size = Number(sizeCode.value);
+  const pole = Number(poleCode.value);
+  const preset = Number(presetCode.value);
   const url = new URL(location.href);
   url.searchParams.set("island", String(island));
   url.searchParams.set("pop", String(pop));
+  url.searchParams.set("size", String(size));
+  url.searchParams.set("pole", String(pole));
+  url.searchParams.set("preset", String(preset));
   history.replaceState(null, "", url);
   if (!ada) return;
-  ada.island_reset_seeds(island, pop);
+  ada.island_reset_settings(island, pop, size, pole, preset);
   selected = 0;
   selectedHome = 0;
   chartGroups = [];
@@ -916,6 +955,9 @@ const bytes = Uint8Array.from(atob(WASM), (c) => c.charCodeAt(0));
 WebAssembly.instantiate(bytes, {env: env, wasi_snapshot_preview1: env}).then((result) => {
   ada = result.instance.exports;
   const query = new URLSearchParams(location.search);
+  if (query.has("size")) sizeCode.value = query.get("size");
+  if (query.has("pole")) poleCode.value = query.get("pole");
+  if (query.has("preset")) presetCode.value = query.get("preset");
   applySeeds(
     query.has("island") ? clampSeed(query.get("island")) : DEFAULT_SEED,
     query.has("pop") ? clampSeed(query.get("pop")) : DEFAULT_SEED);

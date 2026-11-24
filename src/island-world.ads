@@ -1,6 +1,7 @@
 -- World rules. Pass the state in; nothing here is global, and nothing
 -- here reads a clock or a file.
 with Island.Map;
+with Island.Rng;
 with Island.Stomach;
 
 package Island.World is
@@ -147,6 +148,9 @@ package Island.World is
       X        : Coord := 0;
       Y        : Coord := 0;
       Strength : Natural := 0;
+      Group    : Group_Id := 1;
+      --  A second group that walked the same tile. 0 means none.
+      Other    : Natural := 0;
    end record;
 
    type Trail_Array is array (Trail_Id) of Trail_Rec;
@@ -200,6 +204,8 @@ package Island.World is
       Roads       : Road_Array;
       Markets     : Market_Array;
       Meetings    : Natural := 0;
+      --  Folk decisions draw from this stream. It starts at the population seed.
+      Folk_Rng    : Rng.State := Rng.Init (0);
    end record;
 
    function Standable (S : State; X, Y : Coord) return Boolean;

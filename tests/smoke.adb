@@ -2,6 +2,7 @@ with Ada.Text_IO;
 with Island.API;
 with Island.Folk;
 with Island.Map;
+with Island.Rng;
 with Island.Stomach;
 with Island.World;
 use type Island.Direction;
@@ -41,6 +42,35 @@ procedure Smoke is
 
 begin
    pragma Assert (Island.API.Self_Check);
+   declare
+      A, B : Island.Rng.State;
+      Counts : array (0 .. 9) of Natural := [others => 0];
+      Value : Natural;
+      Sum_Sq : Natural := 0;
+      Differ : Boolean := False;
+   begin
+      A := Island.Rng.Init (16#2026_1124#);
+      B := Island.Rng.Init (16#2026_1124#);
+      for I in 1 .. 10_000 loop
+         Value := Island.Rng.Below (A, 10);
+         Counts (Value) := Counts (Value) + 1;
+         pragma Assert (Island.Rng.Below (B, 10) = Value);
+      end loop;
+      for Bucket in Counts'Range loop
+         pragma Assert (Counts (Bucket) in 800 .. 1200);
+         Sum_Sq := Sum_Sq + (Counts (Bucket) - 1000) * (Counts (Bucket) - 1000);
+      end loop;
+      --  Chi-square under 30 for 9 degrees of freedom.
+      pragma Assert (Sum_Sq < 30_000);
+      A := Island.Rng.Init (1);
+      B := Island.Rng.Init (2);
+      for I in 1 .. 4 loop
+         if Island.Rng.Below (A, 1000) /= Island.Rng.Below (B, 1000) then
+            Differ := True;
+         end if;
+      end loop;
+      pragma Assert (Differ);
+   end;
    Island.World.Reset (S);
    S.X := 3;
    S.Y := 48;
@@ -309,33 +339,45 @@ begin
               /= Island.Map.Fish_At (Island.Map.Default_Island_Seed, 1));
       end;
       declare
-         Len  : constant Natural := Island.Map.River_Length (Island.Map.Default_Island_Seed, 1);
+         Seed : constant Island.Map.Seed_Value := Island.Map.Default_Island_Seed;
+         Len  : Natural;
          Prev : Island.Map.Spot;
          Step : Island.Map.Spot;
          Last : Island.Map.Spot;
+         Again_H : Natural;
+         Again_P : Island.Map.Spot;
       begin
-         pragma Assert (Len > 2);
-         Prev := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, 1);
-         Last := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, Len);
+         Ada.Text_IO.Put_Line
+           ("rejections" & Natural'Image (Island.Map.Rejection_Count (Seed)));
+         Again_H := Island.Map.Height (Seed, 20, 40);
+         Again_P := Island.Map.River_Step (Seed, 1, 2);
+         pragma Assert (Island.Map.Height (Seed, 20, 40) = Again_H);
          pragma Assert
-           (Island.Map.Drinkable (Island.Map.Default_Island_Seed, Last.X, Last.Y));
-         for I in 2 .. Len loop
-            Step := Island.Map.River_Step (Island.Map.Default_Island_Seed, 1, I);
-            pragma Assert
-              (Island.Map.Height (Island.Map.Default_Island_Seed, Step.X, Step.Y)
-               <= Island.Map.Height (Island.Map.Default_Island_Seed, Prev.X, Prev.Y)
-               or else abs (Integer (Step.X) - 70) + abs (Integer (Step.Y) - 62)
-                 < abs (Integer (Prev.X) - 70) + abs (Integer (Prev.Y) - 62));
-            Prev := Step;
+           (Island.Map.River_Step (Seed, 1, 2).X = Again_P.X
+            and then Island.Map.River_Step (Seed, 1, 2).Y = Again_P.Y);
+         for Which in Island.Map.River_Index loop
+            Len := Island.Map.River_Length (Seed, Which);
+            pragma Assert (Len > 2);
+            Prev := Island.Map.River_Step (Seed, Which, 1);
+            Last := Island.Map.River_Step (Seed, Which, Len);
+            pragma Assert (Island.Map.Terrain_At (Seed, Last.X, Last.Y) = Island.Water
+              or else Island.Map.Height (Seed, Last.X, Last.Y) = 0);
+            for I in 2 .. Len loop
+               Step := Island.Map.River_Step (Seed, Which, I);
+               pragma Assert
+                 (Island.Map.Height (Seed, Step.X, Step.Y)
+                  <= Island.Map.Height (Seed, Prev.X, Prev.Y));
+               Prev := Step;
+            end loop;
          end loop;
       end;
       Island.World.Reset (W);
-      Island.Folk.Leave_Scent (W, 10, 10);
-      pragma Assert (Island.Folk.Scent (W, 10, 10) >= 2);
-      Island.Folk.Leave_Scent (W, 10, 10);
-      pragma Assert (Island.Folk.Scent (W, 10, 10) > 2);
-      W.Folk (2).X := 12;
-      W.Folk (2).Y := 12;
+      Island.Folk.Leave_Scent (W, 30, 30);
+      pragma Assert (Island.Folk.Scent (W, 30, 30) >= 2);
+      Island.Folk.Leave_Scent (W, 30, 30);
+      pragma Assert (Island.Folk.Scent (W, 30, 30) > 2);
+      W.Folk (2).X := 30;
+      W.Folk (2).Y := 30;
       W.Folk (2).Sticks := 2;
       W.Folk (2).Stones := 0;
       W.Folk (2).Alive := True;
@@ -346,6 +388,20 @@ begin
          pragma Assert (Did);
          pragma Assert (W.Folk (2).Stones = 1);
          pragma Assert (W.Markets (1).Trades = 1);
+      end;
+      Island.World.Reset (W);
+      Island.World.Simulate (W, 3000);
+      declare
+         Trades : Natural := 0;
+      begin
+         for G in Island.World.Group_Id loop
+            Trades := Trades + W.Groups (G).Trades;
+         end loop;
+         Ada.Text_IO.Put_Line
+           ("meetings" & Natural'Image (W.Meetings)
+            & " trades" & Natural'Image (Trades));
+         pragma Assert (W.Meetings >= 1);
+         pragma Assert (Trades >= 1);
       end;
    end;
 end Smoke;

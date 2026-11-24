@@ -855,6 +855,21 @@ package body Island.API is
       return Integer (The_State.Folk (World.Player_Id).Thirst);
    end Thirst;
 
+   function Tile_Height (X, Y : Integer) return Integer is
+   begin
+      Ensure;
+      if X not in Coord or else Y not in Coord then
+         return -1;
+      end if;
+      return Integer (Map.Height (The_State.Island_Seed, X, Y));
+   end Tile_Height;
+
+   function Rejections return Integer is
+   begin
+      Ensure;
+      return Integer (Map.Rejection_Count (The_State.Island_Seed));
+   end Rejections;
+
    function Home_Store (H, Kind : Integer) return Integer is
    begin
       Ensure;

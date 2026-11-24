@@ -139,6 +139,7 @@
     <button type="submit">Run</button>
   </form>
   <p id="hint"><code>look</code>, <code>world</code>, <code>move N</code>, <code>gather</code>, <code>build</code>, <code>feed</code>, <code>trade</code>. F9 downloads the report.</p>
+  <button type="button" id="heightView" aria-pressed="false">Height</button>
   <pre id="reply" aria-live="polite"></pre>
   </div>
   <p id="stamp"></p>
@@ -177,6 +178,8 @@ yieldChannel.port1.onmessage = () => {
   if (resume) resume();
 };
 let selected = 0;
+let picked = {x: 48, y: 48};
+let showHeight = false;
 let selectedHome = 0;
 let view = {x: 0, y: 0, scale: 6};
 let dragging = false;
@@ -293,7 +296,8 @@ function pathReport() {
     trailLength: ada.island_trail_count(),
     roadLength: ada.island_road_count(),
     markets: markets,
-    thirst: ada.island_thirst()
+    thirst: ada.island_thirst(),
+    rejections: ada.island_rejections()
   };
 }
 function rememberChart() {
@@ -326,7 +330,8 @@ function showInspect() {
     return;
   }
   if (!selected || !ada.island_folk_alive(selected)) {
-    inspect.textContent = "Click a creature or a home.";
+    inspect.textContent = "Tile " + picked.x + "," + picked.y
+      + ", height " + ada.island_tile_height(picked.x, picked.y) + ".";
     return;
   }
   const who = selected === 1 ? "You" : "Creature " + selected;
@@ -338,7 +343,8 @@ function showInspect() {
     + ", sight " + ada.island_folk_sight(selected)
     + ", metabolism " + ada.island_folk_meta(selected)
     + ", fertility " + ada.island_folk_fert(selected)
-    + (selected === 1 ? ", thirst " + ada.island_thirst() : "") + ".";
+    + (selected === 1 ? ", thirst " + ada.island_thirst() : "")
+    + ". Ground height " + ada.island_tile_height(ada.island_folk_x(selected), ada.island_folk_y(selected)) + ".";
 }
 function draw() {
   if (!ada) return;
@@ -358,8 +364,20 @@ function draw() {
       const packed = cells[y * n + x];
       const sx = (x - view.x) * view.scale;
       const sy = (y - view.y) * view.scale;
-      ctx.fillStyle = COLORS[packed & 7] || "#c0392b";
+      const ground = ada.island_tile_height(x, y);
+      if (showHeight) {
+        const shade = Math.max(28, 236 - ground * 8);
+        ctx.fillStyle = "rgb(" + shade + "," + shade + "," + shade + ")";
+      } else {
+        ctx.fillStyle = COLORS[packed & 7] || "#c0392b";
+      }
       ctx.fillRect(sx, sy, view.scale + 0.5, view.scale + 0.5);
+      if (!showHeight && ground > 1) {
+        ctx.globalAlpha = Math.min(0.5, ground / 46);
+        ctx.fillStyle = "#1b1916";
+        ctx.fillRect(sx, sy, view.scale + 0.5, view.scale + 0.5);
+        ctx.globalAlpha = 1;
+      }
       const food = (packed >> 3) & 7;
       if (food === 1) {
         ctx.fillStyle = "#c0392b";
@@ -798,6 +816,7 @@ map.addEventListener("pointerup", (ev) => {
   dragging = false;
   if (!dragMoved && ada) {
     const cell = cellAt(ev.clientX, ev.clientY);
+    picked = cell;
     selectedHome = homeAt(cell.x, cell.y);
     selected = selectedHome ? 0 : creatureAt(cell.x, cell.y);
     draw();
@@ -845,6 +864,11 @@ randomSeeds.onclick = () => {
   applySeeds(Math.floor(Math.random() * 2147483647), Math.floor(Math.random() * 2147483647));
 };
 debug.onclick = () => { debugPanel.hidden = !debugPanel.hidden; };
+heightView.onclick = () => {
+  showHeight = !showHeight;
+  heightView.setAttribute("aria-pressed", showHeight ? "true" : "false");
+  draw();
+};
 play.onsubmit = (ev) => {
   ev.preventDefault();
   unlock();

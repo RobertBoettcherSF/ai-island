@@ -21,6 +21,7 @@ mkdir -p obj/wasm docs
 (
   cd obj/wasm
   for F in \
+    ../../src/island-rng.adb \
     ../../src/island-map.adb \
     ../../src/island-stomach.adb \
     ../../src/island-folk.adb \
@@ -112,6 +113,8 @@ mkdir -p obj/wasm docs
     --export=island_market_trades \
     --export=island_meetings \
     --export=island_thirst \
+    --export=island_tile_height \
+    --export=island_rejections \
     --export=memory \
     --export=__gnat_last_chance_handler \
     -z stack-size=1048576 --initial-memory=16777216 \
